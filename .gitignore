@@ -1,0 +1,47 @@
+# Build directories
+build/
+build_mingw/
+build_vs/
+build_debug/
+build_release/
+
+# IDE files
+.vs/
+.vscode/
+*.sln
+*.vcxproj*
+*.user
+
+# Compiled binaries
+*.exe
+*.dll
+*.lib
+*.a
+*.so
+*.dylib
+
+# Debug files
+*.pdb
+*.ilk
+
+# CMake generated files
+CMakeCache.txt
+CMakeFiles/
+cmake_install.cmake
+Makefile
+
+# Object files
+*.o
+*.obj
+
+# Temporary files
+*.tmp
+*.temp
+*~
+
+# Logs
+*.log
+
+# OS specific
+Thumbs.db
+.DS_Store
