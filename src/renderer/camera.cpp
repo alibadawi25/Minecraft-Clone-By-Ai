@@ -73,6 +73,16 @@ void Camera::updateMovement(float deltaTime)
 {
     float velocity = movementSpeed * deltaTime;
 
+    // Check for sprint (Ctrl key)
+    bool isSprinting = (GetAsyncKeyState(VK_CONTROL) & 0x8000) ||
+                      (GetAsyncKeyState(VK_LCONTROL) & 0x8000) ||
+                      (GetAsyncKeyState(VK_RCONTROL) & 0x8000);
+
+    // Apply sprint multiplier if sprinting
+    if (isSprinting) {
+        velocity *= SPRINT_MULTIPLIER;
+    }
+
     // Use GetAsyncKeyState for immediate key state checking
     // This bypasses Windows message queue for more responsive input
 
@@ -99,6 +109,7 @@ void Camera::updateMovement(float deltaTime)
     if (GetAsyncKeyState(VK_SPACE) & 0x8000)
         position += worldUp * velocity;
     if (GetAsyncKeyState(VK_SHIFT) & 0x8000)
+        position -= worldUp * velocity;
         position -= worldUp * velocity;
 }
 
@@ -163,6 +174,16 @@ void Camera::updateWithInput(float deltaTime)
 
     float velocity = movementSpeed * deltaTime;
 
+    // Check for sprint (Ctrl key)
+    bool isSprinting = inputManager->isKeyPressed(VK_CONTROL) ||
+                      inputManager->isKeyPressed(VK_LCONTROL) ||
+                      inputManager->isKeyPressed(VK_RCONTROL);
+
+    // Apply sprint multiplier if sprinting
+    if (isSprinting) {
+        velocity *= SPRINT_MULTIPLIER;
+    }
+
     // Use InputManager's key checking methods for smooth movement
     // WASD movement - continuous movement while held
     if (inputManager->isKeyPressed('W') || inputManager->isKeyPressed(VK_UP))
@@ -186,5 +207,18 @@ void Camera::updateWithInput(float deltaTime)
 void Camera::processKeyboard(const glm::vec3& movement, float deltaTime)
 {
     float velocity = movementSpeed * deltaTime;
+    position += movement * velocity;
+}
+
+// Process keyboard movement with sprint support (for GLFW)
+void Camera::processKeyboardWithSprint(const glm::vec3& movement, float deltaTime, bool isSprinting)
+{
+    float velocity = movementSpeed * deltaTime;
+
+    // Apply sprint multiplier if sprinting
+    if (isSprinting) {
+        velocity *= SPRINT_MULTIPLIER;
+    }
+
     position += movement * velocity;
 }

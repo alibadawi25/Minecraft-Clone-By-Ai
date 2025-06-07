@@ -105,12 +105,12 @@ int main()
     // Print system information
     std::cout << "=== Minecraft Clone v" << MINECRAFT_CLONE_VERSION_MAJOR
               << "." << MINECRAFT_CLONE_VERSION_MINOR
-              << "." << MINECRAFT_CLONE_VERSION_PATCH << " ===" << std::endl;
-    std::cout << "Platform: " << PLATFORM_NAME << " (" << BUILD_TYPE << ")" << std::endl;
+              << "." << MINECRAFT_CLONE_VERSION_PATCH << " ===" << std::endl;    std::cout << "Platform: " << PLATFORM_NAME << " (" << BUILD_TYPE << ")" << std::endl;
     std::cout << "OpenGL Version: " << glGetString(GL_VERSION) << std::endl;
     std::cout << "GLSL Version: " << glGetString(GL_SHADING_LANGUAGE_VERSION) << std::endl;
     std::cout << "Renderer: " << glGetString(GL_RENDERER) << std::endl;
-    std::cout << "Press ESC to toggle mouse capture, ESC twice to quit" << std::endl;
+    std::cout << "Press ESC to toggle mouse capture, Alt+F4 or close window to quit" << std::endl;
+    std::cout << "Hold Ctrl while moving to sprint" << std::endl;
     std::cout << "========================================" << std::endl;
 
     // FPS tracking variables
@@ -153,11 +153,11 @@ int main()
         glm::mat4 view = camera->getViewMatrix();
         glm::mat4 projection = glm::perspective(glm::radians(camera->getFOV()),
                                                (float)SCR_WIDTH / (float)SCR_HEIGHT,
-                                               0.1f, 1000.0f);
-
-        // Render world
+                                               0.1f, 1000.0f);        // Render world
         if (world) {
             world->render(view, projection);
+            // PHASE 5: Update chunks around player
+            world->updateChunksAroundPlayer(camera->getPosition());
         }
 
         // Swap front and back buffers
@@ -190,10 +190,19 @@ void processInput(GLFWwindow* window)
     if (keys[GLFW_KEY_SPACE]) movement += camera->getUp();
     if (keys[GLFW_KEY_LEFT_SHIFT]) movement -= camera->getUp();
 
+    // Check if sprinting (Ctrl key held)
+    bool isSprinting = keys[GLFW_KEY_LEFT_CONTROL] || keys[GLFW_KEY_RIGHT_CONTROL];
+
     // Normalize diagonal movement to prevent faster movement
     if (glm::length(movement) > 0.0f) {
         movement = glm::normalize(movement);
-        camera->processKeyboard(movement, deltaTime);
+
+        // Apply sprint multiplier if sprinting
+        if (isSprinting) {
+            camera->processKeyboardWithSprint(movement, deltaTime, true);
+        } else {
+            camera->processKeyboard(movement, deltaTime);
+        }
     }
 }
 
@@ -201,7 +210,7 @@ void processInput(GLFWwindow* window)
 void key_callback(GLFWwindow* window, int key, int scancode, int action, int mods)
 {
     (void)scancode; // Suppress unused parameter warning
-    (void)mods;     // Suppress unused parameter warning
+    // mods is now used for Alt+F4 detection
 
     // Update key states for smooth movement
     if (key >= 0 && key <= GLFW_KEY_LAST) {
@@ -210,19 +219,26 @@ void key_callback(GLFWwindow* window, int key, int scancode, int action, int mod
         } else if (action == GLFW_RELEASE) {
             keys[key] = false;
         }
-    }
-
-    // Handle ESC key for mouse capture toggle and quit
+    }    // Handle ESC key for mouse capture toggle
     if (key == GLFW_KEY_ESCAPE && action == GLFW_PRESS) {
         if (mouseCaptured) {
             // Release mouse capture
             glfwSetInputMode(window, GLFW_CURSOR, GLFW_CURSOR_NORMAL);
             mouseCaptured = false;
-            std::cout << "Mouse capture released. Press ESC again to quit." << std::endl;
+            std::cout << "Mouse capture released. Press ESC again to re-capture." << std::endl;
         } else {
-            // Quit application
-            g_running = false;
+            // Re-capture mouse
+            glfwSetInputMode(window, GLFW_CURSOR, GLFW_CURSOR_DISABLED);
+            mouseCaptured = true;
+            firstMouse = true;
+            std::cout << "Mouse captured. Press ESC to release." << std::endl;
         }
+    }
+
+    // Handle Alt+F4 for quit
+    if (key == GLFW_KEY_F4 && action == GLFW_PRESS && (mods & GLFW_MOD_ALT)) {
+        g_running = false;
+        std::cout << "Alt+F4 pressed - quitting application." << std::endl;
     }
 
     // Re-capture mouse when clicking

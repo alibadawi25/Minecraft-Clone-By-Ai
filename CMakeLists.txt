@@ -126,10 +126,24 @@ set_target_properties(glfw PROPERTIES
 # Create include directory
 file(MAKE_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}/include)
 
-# Collect source files
-file(GLOB_RECURSE WORLD_SOURCES "src/world/*.cpp")
-file(GLOB_RECURSE UTILS_SOURCES "src/utils/*.cpp")
-file(GLOB_RECURSE RENDERER_SOURCES "src/renderer/*.cpp")
+# Collect source files explicitly (instead of GLOB for better dependency tracking)
+set(WORLD_SOURCES
+    src/world/block.cpp
+    src/world/chunk.cpp
+    src/world/world.cpp
+)
+
+set(UTILS_SOURCES
+    src/utils/math_utils.cpp
+)
+
+set(RENDERER_SOURCES
+    src/renderer/buffer.cpp
+    src/renderer/camera.cpp
+    src/renderer/shader.cpp
+    src/renderer/simple_shader.cpp
+    src/renderer/texture.cpp
+)
 
 # Add main executable
 add_executable(${PROJECT_NAME}

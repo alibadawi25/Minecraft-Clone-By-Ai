@@ -1,6 +1,6 @@
 # 📝 TODO: Minecraft Clone (OpenGL)
 
-A slow, structured plan to build a Minecraft clone using OpenGL.
+A slow, structu- [x] Add basic chunk generation based on 2D Perlin noiseed plan to build a Minecraft clone using OpenGL.
 
 ---
 
@@ -48,11 +48,11 @@ A slow, structured plan to build a Minecraft clone using OpenGL.
 
 ## ✅ PHASE 5: World & Chunk Management
 
-- [ ] Create a `World` class to manage chunks
-- [ ] Store chunks in a map: `std::unordered_map<ChunkCoord, Chunk>`
-- [ ] Load chunks around the player (e.g., 3x3 grid)
-- [ ] Unload distant chunks
-- [ ] Add basic chunk generation based on 2D Perlin noise
+- [x] Create a `World` class to manage chunks
+- [x] Store chunks in a map: `std::unordered_map<ChunkCoord, Chunk>`
+- [x] Load chunks around the player (e.g., 3x3 grid)
+- [x] Unload distant chunks
+- [x] Add basic chunk generation based on 2D Perlin noise
 
 ---
 

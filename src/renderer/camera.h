@@ -21,6 +21,7 @@ enum class CameraMovement {
 const float YAW         = -90.0f;
 const float PITCH       =  0.0f;
 const float SPEED       =  8.0f;  // Increased movement speed for more Minecraft-like feel
+const float SPRINT_MULTIPLIER = 2.0f;  // Sprint speed multiplier (Ctrl+movement)
 const float SENSITIVITY =  0.15f; // Slightly increased for better responsiveness
 const float ZOOM        =  45.0f;
 
@@ -89,10 +90,11 @@ public:
     const glm::vec3& getUp() const { return up; }
 
     // Get field of view
-    float getFOV() const { return zoom; }
-
-    // Process keyboard movement with a direction vector (for GLFW)
+    float getFOV() const { return zoom; }    // Process keyboard movement with a direction vector (for GLFW)
     void processKeyboard(const glm::vec3& movement, float deltaTime);
+
+    // Process keyboard movement with sprint support (for GLFW)
+    void processKeyboardWithSprint(const glm::vec3& movement, float deltaTime, bool isSprinting = false);
 
 private:
     // Calculates the front vector from the Camera's (updated) Euler Angles
