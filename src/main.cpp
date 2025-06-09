@@ -111,10 +111,12 @@ int main()
         std::cerr << "Failed to initialize GLAD" << std::endl;
         glfwTerminate();
         return -1;
-    }
+    }    // Enable depth testing
+    glEnable(GL_DEPTH_TEST);
 
-    // Enable depth testing
-    glEnable(GL_DEPTH_TEST);    // Initialize UI system
+    // Enable alpha blending for transparency
+    glEnable(GL_BLEND);
+    glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);// Initialize UI system
     ui = new ImGuiUI();
     if (!ui->initialize(window)) {
         std::cerr << "Failed to initialize UI system" << std::endl;        delete ui;

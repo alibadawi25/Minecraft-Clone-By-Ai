@@ -273,10 +273,9 @@ void World::generatePerlinTerrain(Chunk* chunk) {
             float detailNoise = noiseGenerator.fractalNoise2D(worldX * 0.05f, worldZ * 0.05f, 2, 0.5f);
 
             // Combine noise values to create varied terrain
-            float combinedNoise = continentalness * 0.7f + heightNoise * 0.2f + detailNoise * 0.1f;
-
-            // Calculate terrain height
+            float combinedNoise = continentalness * 0.7f + heightNoise * 0.2f + detailNoise * 0.1f;            // Calculate terrain height
             int baseHeight = 64;
+            int waterLevel = 30; // Much lower water level for more land and less flooding
             int terrainHeight = static_cast<int>(baseHeight + combinedNoise * 40);
 
             // Clamp height to valid range
@@ -296,15 +295,15 @@ void World::generatePerlinTerrain(Chunk* chunk) {
                     // Dirt layer
                     blockType = BlockType::DIRT;
                 } else if (y <= terrainHeight) {
-                    // Surface layer - grass above sea level, sand below
-                    if (terrainHeight > 62) {
+                    // Surface layer - grass above water level, sand below
+                    if (terrainHeight > waterLevel) {
                         blockType = BlockType::GRASS;
                     } else {
                         blockType = BlockType::SAND;
                     }
                 }
-                // Water level at y=62
-                else if (y <= 62 && terrainHeight < 62) {
+                // Water fills areas below water level where terrain is also below water level
+                else if (y <= waterLevel && terrainHeight < waterLevel) {
                     blockType = BlockType::WATER;
                 }
 

@@ -27,5 +27,17 @@ void main()
     vec3 lighting = ambient + diffuse;
 
     // Apply lighting to texture
-    FragColor = vec4(lighting * texColor.rgb, texColor.a);
+    vec3 finalColor = lighting * texColor.rgb;
+
+    // Water transparency: detect water blocks by their blue color
+    // Water texture is primarily blue (texture coordinates 3,0 in the atlas)
+    float waterThreshold = 0.6; // Threshold for detecting blue water texture
+    bool isWater = (texColor.b > waterThreshold && texColor.b > texColor.r && texColor.b > texColor.g);
+
+    float alpha = texColor.a;
+    if (isWater) {
+        alpha = 0.7; // Make water 70% opaque (30% transparent)
+    }
+
+    FragColor = vec4(finalColor, alpha);
 }

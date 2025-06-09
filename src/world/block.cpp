@@ -66,10 +66,8 @@ void BlockRegistry::initialize() {
 
     blocks[static_cast<size_t>(BlockType::STONE)] = Block(
         BlockType::STONE, "Stone", true, false, 1.5f
-    );
-
-    blocks[static_cast<size_t>(BlockType::WATER)] = Block(
-        BlockType::WATER, "Water", false, true, 0.0f
+    );    blocks[static_cast<size_t>(BlockType::WATER)] = Block(
+        BlockType::WATER, "Water", true, true, 0.0f
     );
 
     blocks[static_cast<size_t>(BlockType::SAND)] = Block(

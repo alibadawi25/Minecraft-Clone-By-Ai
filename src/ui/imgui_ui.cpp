@@ -222,7 +222,7 @@ void ImGuiUI::renderBlockInteractionUI(World* world, Camera* camera, int selecte
         ImGui::Text("Position: (%d, %d, %d)", result.blockPos.x, result.blockPos.y, result.blockPos.z);
         ImGui::Text("Distance: %.2f", result.distance);        // Show block type - only show if it's not AIR (which shouldn't happen due to raycasting logic)
         const char* blockTypeName = "Unknown";
-        std::cout << "Block type detected: " << static_cast<int>(result.block.type) << std::endl;        switch(result.block.type) {
+        switch(result.block.type) {
             case BlockType::AIR: blockTypeName = "Air (ERROR!)"; break;
             case BlockType::GRASS: blockTypeName = "Grass"; break;
             case BlockType::DIRT: blockTypeName = "Dirt"; break;

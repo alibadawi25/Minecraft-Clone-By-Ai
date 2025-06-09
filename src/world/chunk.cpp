@@ -123,9 +123,7 @@ void Chunk::generateMesh() {
                 // Skip air blocks
                 if (blockData.type == BlockType::AIR) {
                     continue;
-                }
-
-                const Block& block = BlockRegistry::getBlock(blockData.type);
+                }                const Block& block = BlockRegistry::getBlock(blockData.type);
 
                 // Skip non-solid blocks for now (transparent blocks need special handling)
                 if (!block.isSolid) {
