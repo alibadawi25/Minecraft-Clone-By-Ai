@@ -54,18 +54,21 @@ void Camera::processKeyboard(CameraMovement direction, float deltaTime)
 {
     float velocity = movementSpeed * deltaTime;
 
+    // Create horizontal-only front vector (remove Y component for ground movement)
+    glm::vec3 horizontalFront = glm::normalize(glm::vec3(front.x, 0.0f, front.z));
+
     if (direction == CameraMovement::FORWARD)
-        position += front * velocity;
+        position += horizontalFront * velocity;
     if (direction == CameraMovement::BACKWARD)
-        position -= front * velocity;
+        position -= horizontalFront * velocity;
     if (direction == CameraMovement::LEFT)
         position -= right * velocity;
     if (direction == CameraMovement::RIGHT)
         position += right * velocity;
     if (direction == CameraMovement::UP)
-        position += worldUp * velocity;
+        position.y += velocity;  // Move up in world coordinates
     if (direction == CameraMovement::DOWN)
-        position -= worldUp * velocity;
+        position.y -= velocity;  // Move down in world coordinates
 }
 
 // Processes direct keyboard input using GetAsyncKeyState for ultra-smooth movement
@@ -84,16 +87,17 @@ void Camera::updateMovement(float deltaTime)
     }
 
     // Use GetAsyncKeyState for immediate key state checking
-    // This bypasses Windows message queue for more responsive input
-
-    // Calculate movement direction vector for smooth diagonal movement
+    // This bypasses Windows message queue for more responsive input    // Calculate movement direction vector for smooth diagonal movement
     glm::vec3 moveDirection(0.0f);
 
-    // WASD movement - accumulate direction vectors
+    // Create horizontal-only front vector (remove Y component for ground movement)
+    glm::vec3 horizontalFront = glm::normalize(glm::vec3(front.x, 0.0f, front.z));
+
+    // WASD movement - accumulate direction vectors (horizontal only)
     if (GetAsyncKeyState('W') & 0x8000 || GetAsyncKeyState(VK_UP) & 0x8000)
-        moveDirection += front;
+        moveDirection += horizontalFront;
     if (GetAsyncKeyState('S') & 0x8000 || GetAsyncKeyState(VK_DOWN) & 0x8000)
-        moveDirection -= front;
+        moveDirection -= horizontalFront;
     if (GetAsyncKeyState('A') & 0x8000 || GetAsyncKeyState(VK_LEFT) & 0x8000)
         moveDirection -= right;
     if (GetAsyncKeyState('D') & 0x8000 || GetAsyncKeyState(VK_RIGHT) & 0x8000)
@@ -103,14 +107,12 @@ void Camera::updateMovement(float deltaTime)
     if (glm::length(moveDirection) > 0.0f) {
         moveDirection = glm::normalize(moveDirection);
         position += moveDirection * velocity;
-    }
-
-    // Space and Shift for up/down movement (separate from horizontal movement)
+    }    // Space and Shift for up/down movement (separate from horizontal movement)
+    // Always move in world up/down direction regardless of camera orientation
     if (GetAsyncKeyState(VK_SPACE) & 0x8000)
-        position += worldUp * velocity;
+        position.y += velocity;  // Move up in world coordinates
     if (GetAsyncKeyState(VK_SHIFT) & 0x8000)
-        position -= worldUp * velocity;
-        position -= worldUp * velocity;
+        position.y -= velocity;  // Move down in world coordinates
 }
 
 // Processes input received from a mouse input system
@@ -182,24 +184,24 @@ void Camera::updateWithInput(float deltaTime)
     // Apply sprint multiplier if sprinting
     if (isSprinting) {
         velocity *= SPRINT_MULTIPLIER;
-    }
+    }    // Use InputManager's key checking methods for smooth movement
+    // Create horizontal-only front vector (remove Y component for ground movement)
+    glm::vec3 horizontalFront = glm::normalize(glm::vec3(front.x, 0.0f, front.z));
 
-    // Use InputManager's key checking methods for smooth movement
-    // WASD movement - continuous movement while held
+    // WASD movement - continuous movement while held (horizontal only)
     if (inputManager->isKeyPressed('W') || inputManager->isKeyPressed(VK_UP))
-        position += front * velocity;
+        position += horizontalFront * velocity;
     if (inputManager->isKeyPressed('S') || inputManager->isKeyPressed(VK_DOWN))
-        position -= front * velocity;
+        position -= horizontalFront * velocity;
     if (inputManager->isKeyPressed('A') || inputManager->isKeyPressed(VK_LEFT))
         position -= right * velocity;
     if (inputManager->isKeyPressed('D') || inputManager->isKeyPressed(VK_RIGHT))
-        position += right * velocity;
-
-    // Space and Shift for up/down movement - continuous movement while held
+        position += right * velocity;// Space and Shift for up/down movement - continuous movement while held
+    // Always move in world up/down direction regardless of camera orientation
     if (inputManager->isKeyPressed(VK_SPACE))
-        position += worldUp * velocity;
+        position.y += velocity;  // Move up in world coordinates
     if (inputManager->isKeyPressed(VK_SHIFT))
-        position -= worldUp * velocity;
+        position.y -= velocity;  // Move down in world coordinates
 }
 #endif
 

@@ -7,8 +7,10 @@
 #include <algorithm>
 #include <glm/gtc/matrix_transform.hpp>
 
-World::World() : initialized(false), blockShader(nullptr), noiseGenerator(1337) {
+World::World() : initialized(false), blockShader(nullptr), noiseGenerator(1337),
+                  renderDistance(DEFAULT_RENDER_DISTANCE) {
     // SimpleNoise doesn't need configuration like FastNoiseLite
+    chunkUnloadDistance = renderDistance * 1.5f + 1.0f;
 }
 
 World::~World() {
@@ -18,17 +20,12 @@ World::~World() {
 void World::initialize() {
     if (initialized) return;
 
-    std::cout << "Initializing World..." << std::endl;
-
     // Initialize block registry
-    BlockRegistry::initialize();    // Initialize block shader
+    BlockRegistry::initialize();// Initialize block shader
     blockShader = new SimpleShader("shaders/block.vert", "shaders/block.frag");
 
     // PHASE 5: Start with no chunks - they will be loaded around the player
-    // Remove the single flat chunk generation from Phase 4
-
-    initialized = true;
-    std::cout << "World initialized - chunks will be loaded dynamically around player." << std::endl;
+    // Remove the single flat chunk generation from Phase 4    initialized = true;
 }
 
 void World::shutdown() {
@@ -39,16 +36,13 @@ void World::shutdown() {
     if (blockShader) {
         delete blockShader;
         blockShader = nullptr;
-    }
-
-    BlockRegistry::shutdown();
+    }    BlockRegistry::shutdown();
 
     initialized = false;
-    std::cout << "World shutdown complete." << std::endl;
 }
 
 void World::generateFlatChunk(ChunkCoord coord) {
-    auto chunk = std::make_unique<Chunk>(coord);
+    auto chunk = std::make_unique<Chunk>(coord, this);
 
     // Generate simple flat terrain
     generateSimpleTerrain(chunk.get());
@@ -74,18 +68,20 @@ void World::addChunk(ChunkCoord coord, std::unique_ptr<Chunk> chunk) {
     chunks[coord] = std::move(chunk);
 }
 
-void World::render(const glm::mat4& view, const glm::mat4& projection) {
+void World::render(const glm::mat4& view, const glm::mat4& projection, const glm::vec3& cameraPos) {
     if (!blockShader) return;
 
     // Use block shader
-    blockShader->use();    // Set view and projection matrices (common for all chunks)
+    blockShader->use();
+
+    // Set view and projection matrices (common for all chunks)
     blockShader->setMatrix4("view", view);
     blockShader->setMatrix4("projection", projection);
 
-    // Set lighting uniforms
-    blockShader->setVector3("lightDirection", glm::vec3(0.3f, -1.0f, 0.3f));
-    blockShader->setVector3("lightColor", glm::vec3(1.0f, 1.0f, 0.9f));
-    blockShader->setVector3("ambientColor", glm::vec3(0.3f, 0.3f, 0.4f));
+    // Set lighting uniforms - balanced daylight setup
+    blockShader->setVector3("lightDirection", glm::vec3(0.2f, -0.8f, 0.1f));  // More overhead sun
+    blockShader->setVector3("lightColor", glm::vec3(0.8f, 0.8f, 0.7f));        // Softer, warm sunlight
+    blockShader->setVector3("ambientColor", glm::vec3(0.3f, 0.3f, 0.4f));      // Moderate ambient light
 
     // Bind texture atlas
     GLuint textureAtlas = BlockRegistry::getTextureAtlas();
@@ -103,7 +99,7 @@ void World::render(const glm::mat4& view, const glm::mat4& projection) {
             glm::mat4 model = glm::translate(glm::mat4(1.0f), chunkWorldPos);
             blockShader->setMatrix4("model", model);
 
-            pair.second->render(view, projection);
+            pair.second->render(view, projection, cameraPos);
         }
     }
 }
@@ -158,7 +154,6 @@ void World::generateSimpleTerrain(Chunk* chunk) {
 }
 
 void World::updateChunksAroundPlayer(const glm::vec3& playerPos) {
-    // std::cout << playerPos.x << std::endl;
     // Get player's chunk coordinate
     ChunkCoord playerChunk = ChunkUtils::worldToChunkCoord(playerPos);
 
@@ -172,16 +167,12 @@ void World::updateChunksAroundPlayer(const glm::vec3& playerPos) {
             loadChunk(coord);
             chunksLoaded++;
         }
-    }
+    }    // Unload distant chunks
+    std::vector<ChunkCoord> chunksToUnload;    for (const auto& pair : chunks) {
+        ChunkCoord chunkCoord = pair.first;        // Use actual player position for more accurate distance calculation
+        float chunkDistance = ChunkUtils::chunkDistanceToPoint(chunkCoord, playerPos);
 
-    // Unload distant chunks
-    std::vector<ChunkCoord> chunksToUnload;
-
-    for (const auto& pair : chunks) {
-        ChunkCoord chunkCoord = pair.first;
-        float chunkDistance = ChunkUtils::chunkDistance(chunkCoord, playerChunk);
-
-        if (chunkDistance > CHUNK_UNLOAD_DISTANCE) {
+        if (chunkDistance > chunkUnloadDistance * CHUNK_WIDTH) {
             chunksToUnload.push_back(chunkCoord);
         }
     }
@@ -189,41 +180,32 @@ void World::updateChunksAroundPlayer(const glm::vec3& playerPos) {
     int chunksUnloaded = 0;
     for (const ChunkCoord& coord : chunksToUnload) {
         unloadChunk(coord);
-        chunksUnloaded++;
-    }
-
-    // Optional: Print statistics when chunks are loaded/unloaded
-    if (chunksLoaded > 0 || chunksUnloaded > 0) {
-        std::cout << "Chunks loaded: " << chunksLoaded << ", unloaded: " << chunksUnloaded
-                  << ", total: " << chunks.size() << std::endl;
-    }
+        chunksUnloaded++;    }
 }
 
-void World::loadChunk(ChunkCoord coord) {
-    if (isChunkLoaded(coord)) {
+void World::loadChunk(ChunkCoord coord) {    if (isChunkLoaded(coord)) {
         return;  // Chunk already loaded
     }
 
-    std::cout << "Loading chunk at (" << coord.x << ", " << coord.z << ")" << std::endl;
-
-    auto chunk = std::make_unique<Chunk>(coord);
+    auto chunk = std::make_unique<Chunk>(coord, this);
 
     // Generate terrain using Perlin noise
     generatePerlinTerrain(chunk.get());
 
     // Set state to generated so mesh generation can proceed
-    chunk->setState(ChunkState::GENERATED);
+    chunk->setState(ChunkState::GENERATED);    // Add chunk to the world first
+    addChunk(coord, std::move(chunk));
 
     // Generate the mesh
-    chunk->generateMesh();
-
-    addChunk(coord, std::move(chunk));
+    Chunk* loadedChunk = getChunk(coord);
+    if (loadedChunk) {
+        loadedChunk->generateMesh();
+    }
 }
 
 void World::unloadChunk(ChunkCoord coord) {
     auto it = chunks.find(coord);
     if (it != chunks.end()) {
-        std::cout << "Unloading chunk at (" << coord.x << ", " << coord.z << ")" << std::endl;
         chunks.erase(it);
     }
 }
@@ -233,18 +215,17 @@ bool World::isChunkLoaded(ChunkCoord coord) const {
 }
 
 std::vector<ChunkCoord> World::getChunksAroundPosition(const glm::vec3& position) const {
-    std::vector<ChunkCoord> result;
-
-    ChunkCoord centerChunk = ChunkUtils::worldToChunkCoord(position);
+    std::vector<ChunkCoord> result;    ChunkCoord centerChunk = ChunkUtils::worldToChunkCoord(position);
 
     // Generate chunks in a square grid around player, but check distance to avoid loading corner chunks that are too far
-    for (int x = centerChunk.x - RENDER_DISTANCE; x <= centerChunk.x + RENDER_DISTANCE; ++x) {
-        for (int z = centerChunk.z - RENDER_DISTANCE; z <= centerChunk.z + RENDER_DISTANCE; ++z) {
+    for (int x = centerChunk.x - renderDistance; x <= centerChunk.x + renderDistance; ++x) {
+        for (int z = centerChunk.z - renderDistance; z <= centerChunk.z + renderDistance; ++z) {
             ChunkCoord coord(x, z);
-            float chunkDistance = ChunkUtils::chunkDistance(coord, centerChunk);
+            // Use actual player position for more accurate distance calculation
+            float chunkDistance = ChunkUtils::chunkDistanceToPoint(coord, position);
 
-            // Only load chunks within the render distance (with a small buffer for square grid)
-            if (chunkDistance <= RENDER_DISTANCE + 0.5f) {
+            // Only load chunks within the render distance (convert to world units)
+            if (chunkDistance <= renderDistance * CHUNK_WIDTH + (CHUNK_WIDTH / 2.0f)) {
                 result.emplace_back(x, z);
             }
         }
@@ -311,4 +292,10 @@ void World::generatePerlinTerrain(Chunk* chunk) {
             }
         }
     }
+}
+
+void World::setRenderDistance(int distance) {
+    // Clamp render distance to reasonable values
+    renderDistance = std::max(2, std::min(32, distance));
+    chunkUnloadDistance = renderDistance * 1.5f + 1.0f;
 }

@@ -1,4 +1,5 @@
 #include "chunk.h"
+#include "world.h"
 #include "block.h"
 #include <iostream>
 #include <algorithm>
@@ -48,25 +49,17 @@ const std::array<glm::vec3, 6> Chunk::FACE_NORMALS = {{
     {0.0f, -1.0f,  0.0f}  // BOTTOM
 }};
 
-Chunk::Chunk(ChunkCoord coord)
-    : coord(coord), state(ChunkState::EMPTY), VAO(0), VBO(0),
+Chunk::Chunk(ChunkCoord coord, World* world)
+    : coord(coord), state(ChunkState::EMPTY), world(world), VAO(0), VBO(0),
       vertexCount(0), meshDirty(true), hasGeometry(false) {
 
     // Initialize all blocks to air
-    blocks.fill(BlockData(BlockType::AIR));
-
-    // Initialize neighbors to nullptr
-    neighbors.fill(nullptr);
-
-    // Initialize OpenGL resources
+    blocks.fill(BlockData(BlockType::AIR));    // Initialize OpenGL resources
     initializeGL();
-
-    std::cout << "Created chunk at (" << coord.x << ", " << coord.z << ")" << std::endl;
 }
 
 Chunk::~Chunk() {
     cleanupGL();
-    std::cout << "Destroyed chunk at (" << coord.x << ", " << coord.z << ")" << std::endl;
 }
 
 BlockData Chunk::getBlock(int x, int y, int z) const {
@@ -107,7 +100,18 @@ void Chunk::setBlockWorld(int worldX, int worldY, int worldZ, BlockData block) {
 }
 
 void Chunk::generateMesh() {
+    static int meshGenCount = 0;    meshGenCount++;
+    if (meshGenCount > 10) {
+        // Prevent infinite remesh loop - abort silently
+        return;
+    }
+
     if (!meshDirty || state != ChunkState::GENERATED) {
+        return;
+    }
+
+    // Prevent infinite mesh regeneration
+    if (state == ChunkState::MESHING) {
         return;
     }
 
@@ -171,17 +175,25 @@ void Chunk::generateMesh() {
                               (void*)(6 * sizeof(float)));
 
         glBindVertexArray(0);
-    }
-
-    meshDirty = false;
+    }    meshDirty = false;
     setState(ChunkState::READY);
 
-    std::cout << "Generated mesh for chunk (" << coord.x << ", " << coord.z
-              << ") with " << vertexCount << " vertices" << std::endl;
+    meshGenCount = 0; // Reset after successful mesh generation
 }
 
-void Chunk::render(const glm::mat4& view, const glm::mat4& projection) {
+void Chunk::render(const glm::mat4& view, const glm::mat4& projection, const glm::vec3& cameraPos) {
     if (!isReady() || !hasGeometry) {
+        return;
+    }
+
+    // Distance-based culling for performance
+    // Calculate distance from camera to chunk center
+    glm::vec3 chunkCenter = getWorldPosition() + glm::vec3(CHUNK_WIDTH * 0.5f, CHUNK_HEIGHT * 0.5f, CHUNK_DEPTH * 0.5f);
+    float distance = glm::length(cameraPos - chunkCenter);
+
+    // Skip rendering if too far away (adjust this value based on performance needs)
+    const float MAX_RENDER_DISTANCE = 256.0f; // About 16 chunks in each direction
+    if (distance > MAX_RENDER_DISTANCE) {
         return;
     }
 
@@ -215,18 +227,9 @@ bool Chunk::isInBounds(int x, int y, int z) const {
            z >= 0 && z < CHUNK_DEPTH;
 }
 
-void Chunk::setNeighbor(CubeFace face, Chunk* neighbor) {
-    neighbors[static_cast<int>(face)] = neighbor;
-}
-
-Chunk* Chunk::getNeighbor(CubeFace face) const {
-    return neighbors[static_cast<int>(face)];
-}
-
 bool Chunk::shouldRenderFace(int x, int y, int z, CubeFace face) const {
-    // Calculate adjacent block position
+    // Calculate adjacent block position in local coordinates
     glm::ivec3 adjacentPos(x, y, z);
-
     switch (face) {
         case CubeFace::FRONT:  adjacentPos.z += 1; break;
         case CubeFace::BACK:   adjacentPos.z -= 1; break;
@@ -245,9 +248,7 @@ bool Chunk::shouldRenderFace(int x, int y, int z, CubeFace face) const {
         return adjacentBlock.type == BlockType::AIR || adjacent.isTransparent;
     }
 
-    // For faces on chunk boundaries, check neighbor chunks
-    // For now, assume chunk boundaries should be rendered
-    // TODO: Implement neighbor chunk checking
+    // At chunk boundary, always render the face (no cross-chunk culling)
     return true;
 }
 
@@ -261,6 +262,22 @@ void Chunk::addFace(std::vector<float>& vertices, const glm::vec3& pos,
     const Block& block = BlockRegistry::getBlock(blockType);
     glm::vec2 texCoords = block.getTextureCoords(static_cast<int>(face));
 
+    // Calculate texture size in UV space
+    float textureSize = 1.0f / BlockRegistry::TEXTURES_PER_ROW;
+
+    // Define UV coordinates for the quad corners
+    // Note: texCoords gives us the top-left corner of the texture tile
+    // Face vertices are ordered: 0=bottom-left, 1=bottom-right, 2=top-right, 3=top-left
+    // OpenGL UV space: (0,0) = bottom-left, (1,1) = top-right
+    // But images are loaded with (0,0) = top-left, so we need to flip Y
+    // Standard UV mapping: (0,0) = top-left, (1,1) = bottom-right in texture space
+    std::array<glm::vec2, 4> uvCoords = {{
+        {texCoords.x, texCoords.y + textureSize},           // 0: bottom-left
+        {texCoords.x + textureSize, texCoords.y + textureSize}, // 1: bottom-right
+        {texCoords.x + textureSize, texCoords.y},           // 2: top-right
+        {texCoords.x, texCoords.y}                            // 3: top-left
+    }};
+
     // Create two triangles for the face (quad split)
     // Triangle 1: 0, 1, 2
     for (int i : {0, 1, 2}) {
@@ -273,12 +290,11 @@ void Chunk::addFace(std::vector<float>& vertices, const glm::vec3& pos,
 
         // Normal
         vertices.push_back(normal.x);
-        vertices.push_back(normal.y);
-        vertices.push_back(normal.z);
+        vertices.push_back(normal.y);        vertices.push_back(normal.z);
 
-        // Texture coordinates (simple mapping for now)
-        vertices.push_back(texCoords.x + (i % 2) * (1.0f / BlockRegistry::TEXTURES_PER_ROW));
-        vertices.push_back(texCoords.y + (i / 2) * (1.0f / BlockRegistry::TEXTURES_PER_ROW));
+        // Texture coordinates (normal U, V)
+        vertices.push_back(uvCoords[i].x);
+        vertices.push_back(uvCoords[i].y);
     }
 
     // Triangle 2: 0, 2, 3
@@ -295,9 +311,9 @@ void Chunk::addFace(std::vector<float>& vertices, const glm::vec3& pos,
         vertices.push_back(normal.y);
         vertices.push_back(normal.z);
 
-        // Texture coordinates
-        vertices.push_back(texCoords.x + (i % 2) * (1.0f / BlockRegistry::TEXTURES_PER_ROW));
-        vertices.push_back(texCoords.y + (i / 2) * (1.0f / BlockRegistry::TEXTURES_PER_ROW));
+        // Texture coordinates (normal U, V)
+        vertices.push_back(uvCoords[i].x);
+        vertices.push_back(uvCoords[i].y);
     }
 }
 
@@ -328,11 +344,6 @@ glm::vec3 Chunk::localToWorld(int x, int y, int z) const {
 void Chunk::initializeGL() {
     glGenVertexArrays(1, &VAO);
     glGenBuffers(1, &VBO);
-
-    if (VAO == 0 || VBO == 0) {
-        std::cerr << "Failed to create OpenGL resources for chunk ("
-                  << coord.x << ", " << coord.z << ")" << std::endl;
-    }
 }
 
 void Chunk::cleanupGL() {
@@ -391,10 +402,17 @@ namespace ChunkUtils {
     }
 
     float chunkDistanceToPoint(const ChunkCoord& chunk, const glm::vec3& point) {
-        glm::vec3 chunkCenter = chunkToWorldPos(chunk) +
-                               glm::vec3(CHUNK_WIDTH / 2.0f, 0, CHUNK_DEPTH / 2.0f);
-        float dx = point.x - chunkCenter.x;
-        float dz = point.z - chunkCenter.z;
+        // Calculate distance to nearest point on chunk (edge-to-edge distance)
+        glm::vec3 chunkMin = chunkToWorldPos(chunk);
+        glm::vec3 chunkMax = chunkMin + glm::vec3(CHUNK_WIDTH, 0, CHUNK_DEPTH);
+
+        // Clamp point to chunk bounds to find nearest point
+        float nearestX = std::max(chunkMin.x, std::min(point.x, chunkMax.x));
+        float nearestZ = std::max(chunkMin.z, std::min(point.z, chunkMax.z));
+
+        // Calculate distance from player to nearest point on chunk
+        float dx = point.x - nearestX;
+        float dz = point.z - nearestZ;
         return std::sqrt(dx * dx + dz * dz);
     }
 

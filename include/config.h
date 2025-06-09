@@ -34,15 +34,9 @@
 #define OPENGL_VERSION_MAJOR 3
 #define OPENGL_VERSION_MINOR 3
 
-// Debug macros
-#if DEBUG_MODE
-    #include <iostream>
-    #define DEBUG_LOG(x) std::cout << "[DEBUG] " << x << std::endl
-    #define DEBUG_ERROR(x) std::cerr << "[ERROR] " << x << std::endl
-#else
-    #define DEBUG_LOG(x)
-    #define DEBUG_ERROR(x)
-#endif
+// Debug macros - disabled for performance
+#define DEBUG_LOG(x)
+#define DEBUG_ERROR(x)
 
 // Utility macros
 #define UNUSED(x) ((void)(x))

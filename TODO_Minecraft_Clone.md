@@ -58,12 +58,12 @@ A slow, structu- [x] Add basic chunk generation based on 2D Perlin noiseed plan 
 
 ## ✅ PHASE 6: Texture & Lighting
 
-- [ ] Load texture atlas using `stb_image.h`
-- [ ] Add UV coordinates to block faces
-- [ ] Bind and use texture atlas in shader
-- [ ] Assign UVs based on block type
-- [ ] Add simple directional lighting (sunlight)
-- [ ] Add ambient lighting
+- [x] Load texture atlas using `stb_image.h`
+- [x] Add UV coordinates to block faces
+- [x] Bind and use texture atlas in shader
+- [x] Assign UVs based on block type
+- [x] Add simple directional lighting (sunlight)
+- [x] Add ambient lighting
 
 ---
 

@@ -85,7 +85,8 @@ private:
     static bool initialized;
 
     static void createTextureAtlas();
+    static void createProceduralTextureAtlas(); // Fallback method
     static void loadBlockTextures();
     static void setupBlockTextures();
-    static glm::vec2 calculateTextureCoords(int textureIndex);
+    static glm::vec2 calculateTextureCoords(int gridX, int gridY); // Updated signature
 };

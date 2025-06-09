@@ -145,12 +145,35 @@ set(RENDERER_SOURCES
     src/renderer/texture.cpp
 )
 
+set(UI_SOURCES
+    src/ui/imgui_ui.cpp
+)
+
+# Add ImGui library
+set(IMGUI_DIR "${EXTERNAL_DIR}/imgui")
+add_library(imgui STATIC
+    ${IMGUI_DIR}/imgui.cpp
+    ${IMGUI_DIR}/imgui_demo.cpp
+    ${IMGUI_DIR}/imgui_draw.cpp
+    ${IMGUI_DIR}/imgui_tables.cpp
+    ${IMGUI_DIR}/imgui_widgets.cpp
+    ${IMGUI_DIR}/backends/imgui_impl_glfw.cpp
+    ${IMGUI_DIR}/backends/imgui_impl_opengl3.cpp
+)
+target_include_directories(imgui PUBLIC
+    ${IMGUI_DIR}
+    ${IMGUI_DIR}/backends
+    ${GLFW_DIR}/include
+    ${GLAD_DIR}/include
+)
+
 # Add main executable
 add_executable(${PROJECT_NAME}
     src/main.cpp
     ${WORLD_SOURCES}
     ${UTILS_SOURCES}
     ${RENDERER_SOURCES}
+    ${UI_SOURCES}
 )
 
 # Set executable properties
@@ -163,6 +186,7 @@ set_target_properties(${PROJECT_NAME} PROPERTIES
 target_link_libraries(${PROJECT_NAME} PRIVATE
     glad
     stb
+    imgui
     glfw
     OpenGL::GL
 )
@@ -206,6 +230,8 @@ target_include_directories(${PROJECT_NAME} PRIVATE
     ${STB_DIR}
     ${GLM_DIR}
     ${GLFW_DIR}/include
+    ${IMGUI_DIR}
+    ${IMGUI_DIR}/backends
 )
 
 if(FASTNOISE_AVAILABLE)

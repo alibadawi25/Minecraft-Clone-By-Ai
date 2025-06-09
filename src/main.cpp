@@ -12,10 +12,12 @@
 #include "renderer/simple_shader.h"
 #include "renderer/camera.h"
 #include "world/world.h"
+#include "ui/imgui_ui.h"
 
 // Function prototypes
 void framebuffer_size_callback(GLFWwindow* window, int width, int height);
 void mouse_callback(GLFWwindow* window, double xpos, double ypos);
+void mouse_button_callback(GLFWwindow* window, int button, int action, int mods);
 void scroll_callback(GLFWwindow* window, double xoffset, double yoffset);
 void key_callback(GLFWwindow* window, int key, int scancode, int action, int mods);
 void processInput(GLFWwindow* window);
@@ -36,6 +38,10 @@ Camera* camera = nullptr;
 float deltaTime = 0.0f;
 float lastFrame = 0.0f;
 
+// UI system
+ImGuiUI* ui = nullptr;
+bool showUI = true;
+
 // Mouse input variables
 bool firstMouse = true;
 float lastX = SCR_WIDTH / 2.0f;
@@ -45,13 +51,14 @@ bool mouseCaptured = true;
 // Key states for smooth input
 bool keys[GLFW_KEY_LAST + 1] = { false };
 
-int main()
-{
-    std::cout << "Starting " << WINDOW_TITLE << std::endl;
-    std::cout << "Platform: " << PLATFORM_NAME << std::endl;
-    std::cout << "Build Type: " << BUILD_TYPE << std::endl;
+// Creative mode flying system
+bool isFlying = true;  // Start with flying enabled
+bool spaceWasPressed = false;
+float lastSpacePress = 0.0f;
+const float DOUBLE_TAP_TIME = 0.3f; // Time window for double-tap detection
 
-    // Initialize GLFW
+int main()
+{    // Initialize GLFW
     if (!glfwInit())
     {
         std::cerr << "Failed to initialize GLFW" << std::endl;
@@ -75,43 +82,34 @@ int main()
         glfwTerminate();
         return -1;
     }
-    glfwMakeContextCurrent(window);
-
-    // Set up callbacks
+    glfwMakeContextCurrent(window);    // Set up callbacks
     glfwSetFramebufferSizeCallback(window, framebuffer_size_callback);
     glfwSetCursorPosCallback(window, mouse_callback);
+    glfwSetMouseButtonCallback(window, mouse_button_callback);
     glfwSetScrollCallback(window, scroll_callback);
     glfwSetKeyCallback(window, key_callback);
 
     // Capture mouse cursor
-    glfwSetInputMode(window, GLFW_CURSOR, GLFW_CURSOR_DISABLED);
-
-    // Initialize GLAD
+    glfwSetInputMode(window, GLFW_CURSOR, GLFW_CURSOR_DISABLED);    // Initialize GLAD
     if (!gladLoadGLLoader((GLADloadproc)glfwGetProcAddress))
     {
         std::cerr << "Failed to initialize GLAD" << std::endl;
         glfwTerminate();
         return -1;
-    }    // Enable depth testing
-    glEnable(GL_DEPTH_TEST);
+    }
+
+    // Enable depth testing
+    glEnable(GL_DEPTH_TEST);    // Initialize UI system
+    ui = new ImGuiUI();
+    if (!ui->initialize(window)) {
+        std::cerr << "Failed to initialize UI system" << std::endl;        delete ui;
+        ui = nullptr;
+    }
 
     // Initialize world system
     world = new World();
-    world->initialize();
-
-    // Initialize camera - position above the ground
+    world->initialize();    // Initialize camera - position above the ground
     camera = new Camera(glm::vec3(8.0f, 70.0f, 8.0f));
-
-    // Print system information
-    std::cout << "=== Minecraft Clone v" << MINECRAFT_CLONE_VERSION_MAJOR
-              << "." << MINECRAFT_CLONE_VERSION_MINOR
-              << "." << MINECRAFT_CLONE_VERSION_PATCH << " ===" << std::endl;    std::cout << "Platform: " << PLATFORM_NAME << " (" << BUILD_TYPE << ")" << std::endl;
-    std::cout << "OpenGL Version: " << glGetString(GL_VERSION) << std::endl;
-    std::cout << "GLSL Version: " << glGetString(GL_SHADING_LANGUAGE_VERSION) << std::endl;
-    std::cout << "Renderer: " << glGetString(GL_RENDERER) << std::endl;
-    std::cout << "Press ESC to toggle mouse capture, Alt+F4 or close window to quit" << std::endl;
-    std::cout << "Hold Ctrl while moving to sprint" << std::endl;
-    std::cout << "========================================" << std::endl;
 
     // FPS tracking variables
     int frameCount = 0;
@@ -155,14 +153,29 @@ int main()
                                                (float)SCR_WIDTH / (float)SCR_HEIGHT,
                                                0.1f, 1000.0f);        // Render world
         if (world) {
-            world->render(view, projection);
+            world->render(view, projection, camera->getPosition());
             // PHASE 5: Update chunks around player
             world->updateChunksAroundPlayer(camera->getPosition());
+        }// Render UI
+        if (ui && showUI) {
+            ui->newFrame();
+
+            // Render render distance control window
+            ui->renderRenderDistanceControl(world);
+
+            // Render debug window with performance info
+            ui->renderDebugWindow(fps, world, camera);
+
+            ui->render();
         }
 
         // Swap front and back buffers
         glfwSwapBuffers(window);
     }    // Clean up
+    if (ui) {
+        delete ui;
+        ui = nullptr;
+    }
     if (world) {
         delete world;
     }
@@ -183,26 +196,41 @@ void processInput(GLFWwindow* window)
     // Movement input - use key states for smooth movement
     glm::vec3 movement(0.0f);
 
-    if (keys[GLFW_KEY_W]) movement += camera->getFront();
-    if (keys[GLFW_KEY_S]) movement -= camera->getFront();
-    if (keys[GLFW_KEY_A]) movement -= camera->getRight();
-    if (keys[GLFW_KEY_D]) movement += camera->getRight();
-    if (keys[GLFW_KEY_SPACE]) movement += camera->getUp();
-    if (keys[GLFW_KEY_LEFT_SHIFT]) movement -= camera->getUp();
+    if (keys[GLFW_KEY_W]) movement += camera->getFront();   // Forward (full camera direction)
+    if (keys[GLFW_KEY_S]) movement -= camera->getFront();   // Backward (full camera direction)
+    if (keys[GLFW_KEY_A]) movement -= camera->getRight();   // Left
+    if (keys[GLFW_KEY_D]) movement += camera->getRight();   // Right
 
-    // Check if sprinting (Ctrl key held)
-    bool isSprinting = keys[GLFW_KEY_LEFT_CONTROL] || keys[GLFW_KEY_RIGHT_CONTROL];
+    // Creative mode flying: Space/Shift for vertical movement when flying
+    if (isFlying) {
+        if (keys[GLFW_KEY_SPACE]) movement.y += 1.0f;        // Up in world coordinates
+        if (keys[GLFW_KEY_LEFT_SHIFT]) movement.y -= 1.0f;   // Down in world coordinates
+    }
 
-    // Normalize diagonal movement to prevent faster movement
+    // Speed modifiers (only when not using Space/Shift for flying)
+    bool isSpeedBoost = !isFlying && keys[GLFW_KEY_SPACE];   // Space = speed boost (when not flying)
+    bool isSlowWalk = !isFlying && keys[GLFW_KEY_LEFT_SHIFT]; // Shift = slow walk (when not flying)
+    bool isSprinting = keys[GLFW_KEY_LEFT_CONTROL] || keys[GLFW_KEY_RIGHT_CONTROL]; // Ctrl = sprint
+
+    // Apply movement if there's any input
     if (glm::length(movement) > 0.0f) {
         movement = glm::normalize(movement);
 
-        // Apply sprint multiplier if sprinting
-        if (isSprinting) {
-            camera->processKeyboardWithSprint(movement, deltaTime, true);
-        } else {
-            camera->processKeyboard(movement, deltaTime);
+        // Calculate speed multiplier based on modifiers
+        float speedMultiplier = 1.0f;
+        if (isFlying) {
+            speedMultiplier = 2.5f;     // Flying = faster base speed
+        } else if (isSpeedBoost) {
+            speedMultiplier = 3.0f;     // Space = 3x speed boost (ground only)
+        } else if (isSlowWalk) {
+            speedMultiplier = 0.3f;     // Shift = slow walk (ground only)
+        } else if (isSprinting) {
+            speedMultiplier = 2.0f;     // Ctrl = normal sprint
         }
+
+        // Apply custom speed multiplier
+        float customDeltaTime = deltaTime * speedMultiplier;
+        camera->processKeyboard(movement, customDeltaTime);
     }
 }
 
@@ -210,12 +238,27 @@ void processInput(GLFWwindow* window)
 void key_callback(GLFWwindow* window, int key, int scancode, int action, int mods)
 {
     (void)scancode; // Suppress unused parameter warning
-    // mods is now used for Alt+F4 detection
+    // mods is now used for Alt+F4 detection    // Handle F1 key for UI toggle
+    if (key == GLFW_KEY_F1 && action == GLFW_PRESS) {
+        showUI = !showUI;
+    }
 
     // Update key states for smooth movement
     if (key >= 0 && key <= GLFW_KEY_LAST) {
         if (action == GLFW_PRESS) {
             keys[key] = true;
+
+            // Handle double-tap Space for creative flying toggle
+            if (key == GLFW_KEY_SPACE) {
+                float currentTime = glfwGetTime();                if (spaceWasPressed && (currentTime - lastSpacePress) < DOUBLE_TAP_TIME) {
+                    // Double-tap detected - toggle flying
+                    isFlying = !isFlying;
+                    spaceWasPressed = false; // Reset to prevent triple-tap issues
+                } else {
+                    spaceWasPressed = true;
+                    lastSpacePress = currentTime;
+                }
+            }
         } else if (action == GLFW_RELEASE) {
             keys[key] = false;
         }
@@ -225,29 +268,21 @@ void key_callback(GLFWwindow* window, int key, int scancode, int action, int mod
             // Release mouse capture
             glfwSetInputMode(window, GLFW_CURSOR, GLFW_CURSOR_NORMAL);
             mouseCaptured = false;
-            std::cout << "Mouse capture released. Press ESC again to re-capture." << std::endl;
         } else {
             // Re-capture mouse
             glfwSetInputMode(window, GLFW_CURSOR, GLFW_CURSOR_DISABLED);
             mouseCaptured = true;
             firstMouse = true;
-            std::cout << "Mouse captured. Press ESC to release." << std::endl;
         }
-    }
-
-    // Handle Alt+F4 for quit
+    }    // Handle Alt+F4 for quit
     if (key == GLFW_KEY_F4 && action == GLFW_PRESS && (mods & GLFW_MOD_ALT)) {
         g_running = false;
-        std::cout << "Alt+F4 pressed - quitting application." << std::endl;
-    }
-
-    // Re-capture mouse when clicking
+    }    // Re-capture mouse when clicking
     if (!mouseCaptured && action == GLFW_PRESS &&
         (key == GLFW_KEY_ENTER || glfwGetMouseButton(window, GLFW_MOUSE_BUTTON_LEFT) == GLFW_PRESS)) {
         glfwSetInputMode(window, GLFW_CURSOR, GLFW_CURSOR_DISABLED);
         mouseCaptured = true;
         firstMouse = true;
-        std::cout << "Mouse captured. Press ESC to release." << std::endl;
     }
 }
 
@@ -255,6 +290,7 @@ void key_callback(GLFWwindow* window, int key, int scancode, int action, int mod
 void mouse_callback(GLFWwindow* window, double xpos, double ypos)
 {
     (void)window; // Suppress unused parameter warning
+
     if (!mouseCaptured || !camera) return;
 
     if (firstMouse) {
@@ -270,6 +306,15 @@ void mouse_callback(GLFWwindow* window, double xpos, double ypos)
     lastY = ypos;
 
     camera->processMouseMovement(xoffset, yoffset);
+}
+
+// Mouse button callback
+void mouse_button_callback(GLFWwindow* window, int button, int action, int mods)
+{
+    (void)window; // Suppress unused parameter warning
+    (void)mods;   // Suppress unused parameter warning
+    (void)button; // Suppress unused parameter warning
+    (void)action; // Suppress unused parameter warning
 }
 
 // Mouse scroll callback

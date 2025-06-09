@@ -21,12 +21,8 @@ public:
 
     // Chunk management
     Chunk* getChunk(ChunkCoord coord);
-    void addChunk(ChunkCoord coord, std::unique_ptr<Chunk> chunk);
-
-    // Rendering
-    void render(const glm::mat4& view, const glm::mat4& projection);
-
-    // Block access (world coordinates)
+    void addChunk(ChunkCoord coord, std::unique_ptr<Chunk> chunk);    // Rendering
+    void render(const glm::mat4& view, const glm::mat4& projection, const glm::vec3& cameraPos);// Block access (world coordinates)
     BlockData getBlock(int x, int y, int z);
     void setBlock(int x, int y, int z, BlockData block);    // PHASE 5: Dynamic chunk management
     void updateChunksAroundPlayer(const glm::vec3& playerPos);
@@ -34,19 +30,24 @@ public:
     void unloadChunk(ChunkCoord coord);
     bool isChunkLoaded(ChunkCoord coord) const;
 
+    // Render distance management
+    int getRenderDistance() const { return renderDistance; }
+    void setRenderDistance(int distance);
+    float getChunkUnloadDistance() const { return chunkUnloadDistance; }
+
+    // Chunk statistics
+    int getLoadedChunkCount() const { return static_cast<int>(chunks.size()); }
+
 private:    std::unordered_map<ChunkCoord, std::unique_ptr<Chunk>, ChunkCoord::Hash> chunks;
     bool initialized;
     SimpleShader* blockShader;
-    MathUtils::SimpleNoise noiseGenerator;  // For terrain generation    // World generation settings
-    static constexpr int RENDER_DISTANCE = 3;  // 7x7 grid around player (-3 to +3)
-    static constexpr float CHUNK_UNLOAD_DISTANCE = 6.0f;  // Distance in chunks to unload (must be > RENDER_DISTANCE * sqrt(2))
+    MathUtils::SimpleNoise noiseGenerator;  // For terrain generation    // World generation settings - now dynamic
+    int renderDistance;
+    float chunkUnloadDistance;
+    static constexpr int DEFAULT_RENDER_DISTANCE = 12;  // Default render distance
 
     // Simple flat world generation for Phase 4
-    void generateSimpleTerrain(Chunk* chunk);
-
-    // PHASE 5: Perlin noise terrain generation
-    void generatePerlinTerrain(Chunk* chunk);
-
-    // Helper function to determine chunks to load around a position
+    void generateSimpleTerrain(Chunk* chunk);    // PHASE 5: Perlin noise terrain generation
+    void generatePerlinTerrain(Chunk* chunk);    // Helper function to determine chunks to load around a position
     std::vector<ChunkCoord> getChunksAroundPosition(const glm::vec3& position) const;
 };

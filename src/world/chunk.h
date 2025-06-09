@@ -8,6 +8,9 @@
 #include <vector>
 #include <memory>
 
+// Forward declaration
+class World;
+
 // Chunk dimensions
 constexpr int CHUNK_WIDTH = 16;
 constexpr int CHUNK_HEIGHT = 256;
@@ -64,8 +67,7 @@ enum class CubeFace {
 };
 
 class Chunk {
-public:
-    Chunk(ChunkCoord coord);
+public:    Chunk(ChunkCoord coord, World* world = nullptr);
     ~Chunk();
 
     // Block access methods
@@ -78,11 +80,9 @@ public:
 
     // Block access by world coordinates
     BlockData getBlockWorld(int worldX, int worldY, int worldZ) const;
-    void setBlockWorld(int worldX, int worldY, int worldZ, BlockData block);
-
-    // Mesh management
+    void setBlockWorld(int worldX, int worldY, int worldZ, BlockData block);    // Mesh management
     void generateMesh();
-    void render(const glm::mat4& view, const glm::mat4& projection);
+    void render(const glm::mat4& view, const glm::mat4& projection, const glm::vec3& cameraPos);
     void clearMesh();
 
     // State management
@@ -97,10 +97,6 @@ public:
     glm::vec3 getWorldPosition() const;
     bool isInBounds(int x, int y, int z) const;
 
-    // Neighbor management (for mesh optimization)
-    void setNeighbor(CubeFace face, Chunk* neighbor);
-    Chunk* getNeighbor(CubeFace face) const;
-
     // Face culling optimization
     bool shouldRenderFace(int x, int y, int z, CubeFace face) const;
 
@@ -113,9 +109,7 @@ private:
     ChunkCoord coord;
     ChunkState state;
     std::array<BlockData, BLOCKS_PER_CHUNK> blocks;
-
-    // Neighbor chunks for face culling
-    std::array<Chunk*, 6> neighbors;
+    World* world;
 
     // Rendering data
     GLuint VAO, VBO;
