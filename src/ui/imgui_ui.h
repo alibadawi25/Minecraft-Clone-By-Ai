@@ -18,10 +18,12 @@ public:
 
     bool initialize(GLFWwindow* window);
     void shutdown();
-    void newFrame();
-    void render();    // UI rendering methods
+    void newFrame();    void render();    // UI rendering methods
     void renderRenderDistanceControl(class World* world);
     void renderDebugWindow(double fps, class World* world, class Camera* camera);
+    void renderBlockInteractionUI(class World* world, class Camera* camera, int selectedBlockType);
+    void renderCrosshair();
+    void renderHotbar(int selectedSlot);
 
 private:
     bool m_initialized = false;

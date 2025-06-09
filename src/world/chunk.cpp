@@ -100,13 +100,7 @@ void Chunk::setBlockWorld(int worldX, int worldY, int worldZ, BlockData block) {
 }
 
 void Chunk::generateMesh() {
-    static int meshGenCount = 0;    meshGenCount++;
-    if (meshGenCount > 10) {
-        // Prevent infinite remesh loop - abort silently
-        return;
-    }
-
-    if (!meshDirty || state != ChunkState::GENERATED) {
+    if (!meshDirty || (state != ChunkState::GENERATED && state != ChunkState::READY)) {
         return;
     }
 
@@ -174,11 +168,8 @@ void Chunk::generateMesh() {
         glVertexAttribPointer(2, 2, GL_FLOAT, GL_FALSE, 8 * sizeof(float),
                               (void*)(6 * sizeof(float)));
 
-        glBindVertexArray(0);
-    }    meshDirty = false;
+        glBindVertexArray(0);    }    meshDirty = false;
     setState(ChunkState::READY);
-
-    meshGenCount = 0; // Reset after successful mesh generation
 }
 
 void Chunk::render(const glm::mat4& view, const glm::mat4& projection, const glm::vec3& cameraPos) {
@@ -239,16 +230,20 @@ bool Chunk::shouldRenderFace(int x, int y, int z, CubeFace face) const {
         case CubeFace::BOTTOM: adjacentPos.y -= 1; break;
     }
 
+    // Get the current block
+    BlockData currentBlock = getBlock(x, y, z);
+    const Block& current = BlockRegistry::getBlock(currentBlock.type);
+
     // Check if adjacent position is within this chunk
     if (isInBounds(adjacentPos.x, adjacentPos.y, adjacentPos.z)) {
         BlockData adjacentBlock = getBlock(adjacentPos.x, adjacentPos.y, adjacentPos.z);
-        const Block& adjacent = BlockRegistry::getBlock(adjacentBlock.type);
 
-        // Don't render face if adjacent block is solid and opaque
-        return adjacentBlock.type == BlockType::AIR || adjacent.isTransparent;
+        // Use the Block class's sophisticated face culling logic
+        return current.shouldRenderFace(adjacentBlock.type);
     }
 
-    // At chunk boundary, always render the face (no cross-chunk culling)
+    // At chunk boundary, always render the face (no cross-chunk culling for now)
+    // TODO: Implement cross-chunk face culling by checking neighboring chunks
     return true;
 }
 

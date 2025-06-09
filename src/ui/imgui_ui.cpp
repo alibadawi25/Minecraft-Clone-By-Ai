@@ -177,15 +177,150 @@ void ImGuiUI::renderDebugWindow(double fps, World* world, Camera* camera) {
     glm::vec3 front = camera->getFront();
     ImGui::Text("Direction: (%.2f, %.2f, %.2f)", front.x, front.y, front.z);
 
-    ImGui::Separator();
-
-    ImGui::Text("Controls:");
+    ImGui::Separator();    ImGui::Text("Controls:");
     ImGui::Text("F1: Toggle UI");
     ImGui::Text("WASD: Move");
     ImGui::Text("Mouse: Look around");
     ImGui::Text("Scroll: Change FOV");
     ImGui::Text("Space: Fly up / Jump");
     ImGui::Text("Shift: Fly down / Sneak");
+    ImGui::Text("Left Click: Remove Block");
+    ImGui::Text("Right Click: Place Block");
+
+    ImGui::End();
+}
+
+void ImGuiUI::renderBlockInteractionUI(World* world, Camera* camera, int selectedBlockType) {
+    if (!world || !camera) return;
+
+    ImGui::Begin("Block Interaction");
+
+    ImGui::Text("Block Interaction Controls:");
+    ImGui::Separator();
+
+    ImGui::Text("Left Click: Remove Block");
+    ImGui::Text("Right Click: Place Block");
+    ImGui::Separator();
+
+    // Show current selected block type
+    const char* selectedBlockName = "Unknown";
+    switch(selectedBlockType) {
+        case 0: selectedBlockName = "Dirt"; break;     // BlockType::DIRT
+        case 1: selectedBlockName = "Grass"; break;    // BlockType::GRASS
+        case 2: selectedBlockName = "Stone"; break;    // BlockType::STONE
+        case 6: selectedBlockName = "Wood"; break;     // BlockType::WOOD
+        case 7: selectedBlockName = "Leaves"; break;   // BlockType::LEAVES
+        default: selectedBlockName = "Unknown"; break;
+    }
+    ImGui::Text("Selected Block: %s (Press 1-5 to change)", selectedBlockName);
+
+    ImGui::Separator();    // Cast a ray to show what block we're looking at
+    World::RaycastResult result = world->raycast(camera->getPosition(), camera->getFront(), 10.0f);
+
+    if (result.hit) {
+        ImGui::Text("Looking at Block:");
+        ImGui::Text("Position: (%d, %d, %d)", result.blockPos.x, result.blockPos.y, result.blockPos.z);
+        ImGui::Text("Distance: %.2f", result.distance);        // Show block type - only show if it's not AIR (which shouldn't happen due to raycasting logic)
+        const char* blockTypeName = "Unknown";
+        std::cout << "Block type detected: " << static_cast<int>(result.block.type) << std::endl;        switch(result.block.type) {
+            case BlockType::AIR: blockTypeName = "Air (ERROR!)"; break;
+            case BlockType::GRASS: blockTypeName = "Grass"; break;
+            case BlockType::DIRT: blockTypeName = "Dirt"; break;
+            case BlockType::STONE: blockTypeName = "Stone"; break;
+            case BlockType::WATER: blockTypeName = "Water"; break;
+            case BlockType::SAND: blockTypeName = "Sand"; break;
+            case BlockType::WOOD: blockTypeName = "Wood"; break;
+            case BlockType::LEAVES: blockTypeName = "Leaves"; break;
+            case BlockType::COBBLESTONE: blockTypeName = "Cobblestone"; break;
+            case BlockType::BEDROCK: blockTypeName = "Bedrock"; break;
+            default: blockTypeName = "Unknown"; break;
+        }
+        ImGui::Text("Block Type: %s", blockTypeName);
+
+        // Show placement position for right-click
+        ImGui::Separator();
+        ImGui::Text("Placement Position: (%d, %d, %d)",
+                   result.adjacentPos.x, result.adjacentPos.y, result.adjacentPos.z);
+    } else {
+        ImGui::Text("No block in range");
+    }
+
+    ImGui::Separator();
+
+    // Quick debug info
+    ImGui::Text("Camera Position: (%.1f, %.1f, %.1f)",
+               camera->getPosition().x, camera->getPosition().y, camera->getPosition().z);
+    glm::vec3 front = camera->getFront();
+    ImGui::Text("Looking Direction: (%.2f, %.2f, %.2f)", front.x, front.y, front.z);
+
+    ImGui::End();
+}
+
+void ImGuiUI::renderCrosshair() {
+    // Get the main viewport
+    ImGuiViewport* viewport = ImGui::GetMainViewport();
+    ImVec2 center = ImVec2(viewport->Size.x * 0.5f, viewport->Size.y * 0.5f);
+
+    // Get the foreground draw list to draw on top of everything
+    ImDrawList* draw_list = ImGui::GetForegroundDrawList();
+
+    // Crosshair properties
+    float size = 10.0f;
+    float thickness = 2.0f;
+    ImU32 color = IM_COL32(255, 255, 255, 200); // White with slight transparency
+
+    // Draw crosshair
+    draw_list->AddLine(ImVec2(center.x - size, center.y), ImVec2(center.x + size, center.y), color, thickness);
+    draw_list->AddLine(ImVec2(center.x, center.y - size), ImVec2(center.x, center.y + size), color, thickness);
+
+    // Optional: Add a small center dot
+    draw_list->AddCircleFilled(center, 1.0f, color);
+}
+
+void ImGuiUI::renderHotbar(int selectedSlot) {
+    // Get the main viewport
+    ImGuiViewport* viewport = ImGui::GetMainViewport();
+
+    // Position hotbar at bottom center
+    ImVec2 hotbar_size = ImVec2(360.0f, 50.0f);
+    ImVec2 hotbar_pos = ImVec2(
+        (viewport->Size.x - hotbar_size.x) * 0.5f,
+        viewport->Size.y - hotbar_size.y - 20.0f
+    );
+
+    // Create a transparent window for the hotbar
+    ImGui::SetNextWindowPos(hotbar_pos);
+    ImGui::SetNextWindowSize(hotbar_size);
+    ImGui::Begin("Hotbar", nullptr,
+                 ImGuiWindowFlags_NoTitleBar | ImGuiWindowFlags_NoResize |
+                 ImGuiWindowFlags_NoMove | ImGuiWindowFlags_NoScrollbar |
+                 ImGuiWindowFlags_NoBackground | ImGuiWindowFlags_NoDecoration);    // Block type names and selection
+    const char* blockTypes[] = {"Dirt", "Stone", "Wood", "Grass", "Leaves"};
+
+    float slotSize = 40.0f;
+
+    for (int i = 0; i < 5; i++) {
+        if (i > 0) ImGui::SameLine();
+
+        // Change color for selected slot
+        if (i == selectedSlot) {
+            ImGui::PushStyleColor(ImGuiCol_Button, ImVec4(0.8f, 0.8f, 0.8f, 0.8f));
+            ImGui::PushStyleColor(ImGuiCol_ButtonHovered, ImVec4(0.9f, 0.9f, 0.9f, 0.9f));
+        } else {
+            ImGui::PushStyleColor(ImGuiCol_Button, ImVec4(0.4f, 0.4f, 0.4f, 0.8f));
+            ImGui::PushStyleColor(ImGuiCol_ButtonHovered, ImVec4(0.6f, 0.6f, 0.6f, 0.8f));
+        }
+
+        // Create slot button
+        ImGui::Button(blockTypes[i], ImVec2(slotSize, slotSize));
+
+        ImGui::PopStyleColor(2);
+
+        // Show number key hint
+        ImGui::SetCursorPosY(ImGui::GetCursorPosY() - 15.0f);
+        if (i < 4) ImGui::SameLine();
+        ImGui::Text("%d", i + 1);
+    }
 
     ImGui::End();
 }

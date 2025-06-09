@@ -51,6 +51,21 @@ bool mouseCaptured = true;
 // Key states for smooth input
 bool keys[GLFW_KEY_LAST + 1] = { false };
 
+// Block interaction timing
+float lastBlockInteraction = 0.0f;
+const float BLOCK_INTERACTION_COOLDOWN = 0.2f; // 200ms cooldown between interactions
+
+// Block selection system
+BlockType selectedBlockType = BlockType::DIRT; // Default to dirt
+const BlockType HOTBAR_BLOCKS[] = {
+    BlockType::DIRT,
+    BlockType::STONE,
+    BlockType::WOOD,
+    BlockType::GRASS,
+    BlockType::LEAVES
+};
+const int HOTBAR_SIZE = 5;
+
 // Creative mode flying system
 bool isFlying = true;  // Start with flying enabled
 bool spaceWasPressed = false;
@@ -156,15 +171,35 @@ int main()
             world->render(view, projection, camera->getPosition());
             // PHASE 5: Update chunks around player
             world->updateChunksAroundPlayer(camera->getPosition());
-        }// Render UI
-        if (ui && showUI) {
+            // PHASE 7: Update dirty chunk meshes after block changes
+            world->updateDirtyChunks();
+        }        // Render UI
+        if (ui) {
             ui->newFrame();
 
-            // Render render distance control window
-            ui->renderRenderDistanceControl(world);
+            if (showUI) {
+                // Render render distance control window
+                ui->renderRenderDistanceControl(world);
 
-            // Render debug window with performance info
-            ui->renderDebugWindow(fps, world, camera);
+                // Render debug window with performance info
+                ui->renderDebugWindow(fps, world, camera);
+
+                // Render block interaction UI - pass selected block type as int
+                ui->renderBlockInteractionUI(world, camera, static_cast<int>(selectedBlockType));
+            }
+
+            // Calculate selected slot index for hotbar
+            int selectedSlot = 0;
+            for (int i = 0; i < HOTBAR_SIZE; i++) {
+                if (HOTBAR_BLOCKS[i] == selectedBlockType) {
+                    selectedSlot = i;
+                    break;
+                }
+            }
+
+            // Always render crosshair and hotbar
+            ui->renderCrosshair();
+            ui->renderHotbar(selectedSlot);
 
             ui->render();
         }
@@ -258,11 +293,22 @@ void key_callback(GLFWwindow* window, int key, int scancode, int action, int mod
                     spaceWasPressed = true;
                     lastSpacePress = currentTime;
                 }
-            }
-        } else if (action == GLFW_RELEASE) {
+            }        } else if (action == GLFW_RELEASE) {
             keys[key] = false;
         }
-    }    // Handle ESC key for mouse capture toggle
+    }
+
+    // Handle number keys for hotbar selection (1-5)
+    if (action == GLFW_PRESS) {
+        if (key >= GLFW_KEY_1 && key <= GLFW_KEY_5) {
+            int slotIndex = key - GLFW_KEY_1; // Convert to 0-4 range
+            if (slotIndex < HOTBAR_SIZE) {
+                selectedBlockType = HOTBAR_BLOCKS[slotIndex];
+            }
+        }
+    }
+
+    // Handle ESC key for mouse capture toggle
     if (key == GLFW_KEY_ESCAPE && action == GLFW_PRESS) {
         if (mouseCaptured) {
             // Release mouse capture
@@ -313,8 +359,47 @@ void mouse_button_callback(GLFWwindow* window, int button, int action, int mods)
 {
     (void)window; // Suppress unused parameter warning
     (void)mods;   // Suppress unused parameter warning
-    (void)button; // Suppress unused parameter warning
-    (void)action; // Suppress unused parameter warning
+
+    // Check if ImGui wants to capture mouse input
+    ImGuiIO& io = ImGui::GetIO();
+    if (io.WantCaptureMouse) {
+        return; // Let ImGui handle the mouse input
+    }
+
+    // Only handle clicks when mouse is captured and action is press
+    if (!mouseCaptured || action != GLFW_PRESS || !camera || !world) {
+        return;
+    }
+
+    // Check cooldown to prevent rapid clicking
+    float currentTime = glfwGetTime();
+    if (currentTime - lastBlockInteraction < BLOCK_INTERACTION_COOLDOWN) {
+        return;
+    }
+
+    // Cast a ray from camera to find targeted block
+    World::RaycastResult result = world->raycast(camera->getPosition(), camera->getFront(), 10.0f);
+
+    if (result.hit) {
+        if (button == GLFW_MOUSE_BUTTON_LEFT) {
+            // Left-click: remove block (set to Air)
+            world->setBlock(result.blockPos.x, result.blockPos.y, result.blockPos.z,
+                          BlockData{BlockType::AIR});
+            lastBlockInteraction = currentTime;        } else if (button == GLFW_MOUSE_BUTTON_RIGHT) {
+            // Right-click: add block of selected type to adjacent face
+            // Make sure we're not placing a block where the player is standing
+            glm::vec3 playerPos = camera->getPosition();
+            glm::ivec3 playerBlockPos = glm::ivec3(glm::floor(playerPos));
+
+            // Check if the placement position would overlap with player
+            if (result.adjacentPos != playerBlockPos &&
+                result.adjacentPos != glm::ivec3(glm::floor(playerPos + glm::vec3(0, 1, 0)))) {
+                world->setBlock(result.adjacentPos.x, result.adjacentPos.y, result.adjacentPos.z,
+                              BlockData{selectedBlockType});
+                lastBlockInteraction = currentTime;
+            }
+        }
+    }
 }
 
 // Mouse scroll callback

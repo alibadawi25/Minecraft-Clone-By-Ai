@@ -69,10 +69,10 @@ A slow, structu- [x] Add basic chunk generation based on 2D Perlin noiseed plan 
 
 ## ✅ PHASE 7: Player Interaction
 
-- [ ] Cast a ray from camera to find targeted block
-- [ ] On left-click: remove block (set to Air)
-- [ ] On right-click: add block (e.g., Dirt) to adjacent face
-- [ ] Update chunk mesh on block change
+- [x] Cast a ray from camera to find targeted block
+- [x] On left-click: remove block (set to Air)
+- [x] On right-click: add block (e.g., Dirt) to adjacent face
+- [x] Update chunk mesh on block change
 
 ---
 
