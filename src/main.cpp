@@ -114,6 +114,11 @@ int main()
     }    // Enable depth testing
     glEnable(GL_DEPTH_TEST);
 
+    // Enable face culling to prevent rendering back faces
+    glEnable(GL_CULL_FACE);
+    glCullFace(GL_BACK);
+    glFrontFace(GL_CCW);  // Counter-clockwise winding is front-facing
+
     // Enable alpha blending for transparency
     glEnable(GL_BLEND);
     glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);// Initialize UI system
@@ -165,10 +170,29 @@ int main()
         processInput(window);        // Set background color and clear screen
         glClearColor(0.53f, 0.81f, 0.92f, 1.0f);  // Sky blue color
         glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);        // Create view and projection matrices
-        glm::mat4 view = camera->getViewMatrix();
+        glm::mat4 view = camera->getViewMatrix();        // Calculate far plane distance based on render distance
+        float farDistance = 1000.0f; // Default fallback
+        if (world) {
+            // Convert render distance (chunks) to world units
+            // Render distance is the radius from player, so we need to consider diagonal distance
+            float renderDistanceChunks = world->getRenderDistance();
+
+            // Diagonal distance is sqrt(2) times the render distance for corner chunks
+            float diagonalDistance = renderDistanceChunks * 1.414f; // sqrt(2) ≈ 1.414
+
+            // Convert to world units (each chunk is 16x16 blocks)
+            float renderDistanceWorldUnits = diagonalDistance * 16.0f;
+
+            // Add safety margin: extra chunks + full height buffer + some padding
+            farDistance = renderDistanceWorldUnits + (3.0f * 16.0f) + 256.0f + 50.0f;
+
+            // Ensure minimum far distance for proper depth buffer precision
+            farDistance = std::max(farDistance, 300.0f);
+        }
+
         glm::mat4 projection = glm::perspective(glm::radians(camera->getFOV()),
                                                (float)SCR_WIDTH / (float)SCR_HEIGHT,
-                                               0.1f, 1000.0f);        // Render world
+                                               0.1f, farDistance);// Render world
         if (world) {
             world->render(view, projection, camera->getPosition());
             // PHASE 5: Update chunks around player

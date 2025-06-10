@@ -6,33 +6,40 @@
 #include <cmath>
 
 // Face vertices for cube mesh generation (in local coordinates)
+// All faces ordered counter-clockwise when viewed from outside the cube
 const std::array<std::array<glm::vec3, 4>, 6> Chunk::FACE_VERTICES = {{
-    // FRONT
+    // FRONT (+Z) - looking at cube from positive Z direction
+    // Counter-clockwise: bottom-left, bottom-right, top-right, top-left
     {{
         {0.0f, 0.0f, 1.0f}, {1.0f, 0.0f, 1.0f},
         {1.0f, 1.0f, 1.0f}, {0.0f, 1.0f, 1.0f}
     }},
-    // BACK
+    // BACK (-Z) - looking at cube from negative Z direction
+    // Counter-clockwise: bottom-right, bottom-left, top-left, top-right
     {{
         {1.0f, 0.0f, 0.0f}, {0.0f, 0.0f, 0.0f},
         {0.0f, 1.0f, 0.0f}, {1.0f, 1.0f, 0.0f}
     }},
-    // LEFT
+    // LEFT (-X) - looking at cube from negative X direction
+    // Counter-clockwise: bottom-back, bottom-front, top-front, top-back
     {{
         {0.0f, 0.0f, 0.0f}, {0.0f, 0.0f, 1.0f},
         {0.0f, 1.0f, 1.0f}, {0.0f, 1.0f, 0.0f}
     }},
-    // RIGHT
+    // RIGHT (+X) - looking at cube from positive X direction
+    // Counter-clockwise: bottom-front, bottom-back, top-back, top-front
     {{
         {1.0f, 0.0f, 1.0f}, {1.0f, 0.0f, 0.0f},
         {1.0f, 1.0f, 0.0f}, {1.0f, 1.0f, 1.0f}
     }},
-    // TOP
+    // TOP (+Y) - looking at cube from positive Y direction
+    // Counter-clockwise: front-left, front-right, back-right, back-left
     {{
         {0.0f, 1.0f, 1.0f}, {1.0f, 1.0f, 1.0f},
         {1.0f, 1.0f, 0.0f}, {0.0f, 1.0f, 0.0f}
     }},
-    // BOTTOM
+    // BOTTOM (-Y) - looking at cube from negative Y direction
+    // Counter-clockwise: back-left, back-right, front-right, front-left
     {{
         {0.0f, 0.0f, 0.0f}, {1.0f, 0.0f, 0.0f},
         {1.0f, 0.0f, 1.0f}, {0.0f, 0.0f, 1.0f}
@@ -109,12 +116,10 @@ void Chunk::generateMesh() {
         return;
     }
 
-    setState(ChunkState::MESHING);
-
-    std::vector<float> vertices;
+    setState(ChunkState::MESHING);    std::vector<float> vertices;
     vertices.reserve(BLOCKS_PER_CHUNK * 6 * 4 * 8); // Estimate max vertices
 
-    // Iterate through all blocks in the chunk
+    // FIRST PASS: Render solid blocks first for proper depth testing
     for (int y = 0; y < CHUNK_HEIGHT; y++) {
         for (int z = 0; z < CHUNK_DEPTH; z++) {
             for (int x = 0; x < CHUNK_WIDTH; x++) {
@@ -123,10 +128,42 @@ void Chunk::generateMesh() {
                 // Skip air blocks
                 if (blockData.type == BlockType::AIR) {
                     continue;
-                }                const Block& block = BlockRegistry::getBlock(blockData.type);
+                }
 
-                // Skip non-solid blocks for now (transparent blocks need special handling)
-                if (!block.isSolid) {
+                const Block& block = BlockRegistry::getBlock(blockData.type);
+
+                // FIRST PASS: Only render solid, opaque blocks
+                if (!block.isSolid || block.isTransparent) {
+                    continue;
+                }
+
+                glm::vec3 blockPos(x, y, z);
+
+                // Check each face for visibility
+                for (int face = 0; face < 6; face++) {
+                    if (shouldRenderFace(x, y, z, static_cast<CubeFace>(face))) {
+                        addFace(vertices, blockPos, static_cast<CubeFace>(face), blockData.type);
+                    }
+                }
+            }
+        }
+    }
+
+    // SECOND PASS: Render transparent blocks last for proper blending
+    for (int y = 0; y < CHUNK_HEIGHT; y++) {
+        for (int z = 0; z < CHUNK_DEPTH; z++) {
+            for (int x = 0; x < CHUNK_WIDTH; x++) {
+                BlockData blockData = getBlock(x, y, z);
+
+                // Skip air blocks
+                if (blockData.type == BlockType::AIR) {
+                    continue;
+                }
+
+                const Block& block = BlockRegistry::getBlock(blockData.type);
+
+                // SECOND PASS: Only render transparent blocks
+                if (!block.isTransparent) {
                     continue;
                 }
 
@@ -173,16 +210,22 @@ void Chunk::generateMesh() {
 void Chunk::render(const glm::mat4& view, const glm::mat4& projection, const glm::vec3& cameraPos) {
     if (!isReady() || !hasGeometry) {
         return;
-    }
-
-    // Distance-based culling for performance
+    }    // Distance-based culling for performance
     // Calculate distance from camera to chunk center
     glm::vec3 chunkCenter = getWorldPosition() + glm::vec3(CHUNK_WIDTH * 0.5f, CHUNK_HEIGHT * 0.5f, CHUNK_DEPTH * 0.5f);
     float distance = glm::length(cameraPos - chunkCenter);
 
-    // Skip rendering if too far away (adjust this value based on performance needs)
-    const float MAX_RENDER_DISTANCE = 256.0f; // About 16 chunks in each direction
-    if (distance > MAX_RENDER_DISTANCE) {
+    // Skip rendering if too far away - use world's render distance setting
+    float maxRenderDistance = 256.0f; // Default fallback
+    if (world) {
+        // Calculate max render distance based on world's render distance setting
+        // Add some buffer for diagonal chunks and safety margin
+        float renderDistanceChunks = static_cast<float>(world->getRenderDistance());
+        float diagonalDistance = renderDistanceChunks * 1.414f; // sqrt(2) for diagonal chunks
+        maxRenderDistance = diagonalDistance * CHUNK_WIDTH + (CHUNK_WIDTH * 2.0f); // Add 2 chunk buffer
+    }
+
+    if (distance > maxRenderDistance) {
         return;
     }
 
@@ -238,10 +281,67 @@ bool Chunk::shouldRenderFace(int x, int y, int z, CubeFace face) const {
 
         // Use the Block class's sophisticated face culling logic
         return current.shouldRenderFace(adjacentBlock.type);
+    }    // At chunk boundary - check neighboring chunks through World
+    if (world) {
+        // Convert current block position to world coordinates
+        glm::vec3 chunkWorldPos = getWorldPosition();
+        glm::ivec3 currentBlockWorldPos(
+            static_cast<int>(chunkWorldPos.x) + x,  // x is the local block coordinate (0-15)
+            y,
+            static_cast<int>(chunkWorldPos.z) + z   // z is the local block coordinate (0-15)
+        );
+
+        // Calculate adjacent block world position by applying face offset
+        glm::ivec3 worldAdjacentPos = currentBlockWorldPos;
+        switch (face) {
+            case CubeFace::FRONT:  worldAdjacentPos.z += 1; break;
+            case CubeFace::BACK:   worldAdjacentPos.z -= 1; break;
+            case CubeFace::LEFT:   worldAdjacentPos.x -= 1; break;
+            case CubeFace::RIGHT:  worldAdjacentPos.x += 1; break;
+            case CubeFace::TOP:    worldAdjacentPos.y += 1; break;
+            case CubeFace::BOTTOM: worldAdjacentPos.y -= 1; break;
+        }
+
+        // Check if the neighboring chunk exists
+        ChunkCoord neighborChunkCoord = ChunkUtils::worldToChunkCoord(worldAdjacentPos.x, worldAdjacentPos.z);
+        const Chunk* neighborChunk = world->getChunk(neighborChunkCoord);
+
+        if (neighborChunk) {
+            // Neighboring chunk exists, get the actual adjacent block
+            BlockData adjacentBlock = world->getBlock(worldAdjacentPos.x, worldAdjacentPos.y, worldAdjacentPos.z);
+            return current.shouldRenderFace(adjacentBlock.type);
+        } else {
+            // Neighboring chunk doesn't exist yet - check if we should generate terrain assumption
+            // For cross-chunk face culling during initial generation, we need to make an educated guess
+            // about what terrain would be in the neighboring chunk
+
+            // If we're at or below sea level and the current block is solid, assume neighbor might be solid too
+            // This prevents underwater terrain from having too many exposed faces during initial generation
+            const int SEA_LEVEL = 64; // Should match world generation
+
+            if (y <= SEA_LEVEL && current.isSolid) {
+                // For solid blocks at/below sea level, be more conservative about rendering faces
+                // This reduces visual artifacts during initial chunk loading
+                if (face == CubeFace::TOP) {
+                    // Always render top faces - sky is always visible
+                    return true;
+                } else if (face == CubeFace::BOTTOM) {
+                    // Usually don't render bottom faces underground
+                    return y <= 5; // Only render near bedrock level
+                } else {
+                    // For side faces, assume neighbor might be solid (conservative approach)
+                    // This reduces flickering during chunk loading
+                    return current.isTransparent; // Only render if current block is transparent
+                }
+            } else {
+                // Above sea level or non-solid blocks - default to rendering the face
+                // This ensures proper terrain visibility and water transparency
+                return true;
+            }
+        }
     }
 
-    // At chunk boundary, always render the face (no cross-chunk culling for now)
-    // TODO: Implement cross-chunk face culling by checking neighboring chunks
+    // Fallback if no world pointer available
     return true;
 }
 

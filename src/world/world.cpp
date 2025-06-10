@@ -129,8 +129,40 @@ void World::setBlock(int x, int y, int z, BlockData block) {
     Chunk* chunk = getChunk(chunkCoord);
 
     if (chunk) {
+        // Convert world coordinates to local chunk coordinates
+        glm::ivec3 localPos = ChunkUtils::worldToLocal(x, y, z);
+
         chunk->setBlockWorld(x, y, z, block);
         chunk->markForRemesh();
+
+        // Check if this block is at a chunk boundary and notify neighboring chunks
+        // A block is at a boundary if it's at the edge of the chunk (0 or 15 for x,z)
+        std::vector<ChunkCoord> neighborsToUpdate;
+
+        if (localPos.x == 0) {
+            // Block is at the left edge, notify left neighbor
+            neighborsToUpdate.emplace_back(chunkCoord.x - 1, chunkCoord.z);
+        }
+        if (localPos.x == CHUNK_WIDTH - 1) {
+            // Block is at the right edge, notify right neighbor
+            neighborsToUpdate.emplace_back(chunkCoord.x + 1, chunkCoord.z);
+        }
+        if (localPos.z == 0) {
+            // Block is at the front edge, notify front neighbor
+            neighborsToUpdate.emplace_back(chunkCoord.x, chunkCoord.z - 1);
+        }
+        if (localPos.z == CHUNK_DEPTH - 1) {
+            // Block is at the back edge, notify back neighbor
+            neighborsToUpdate.emplace_back(chunkCoord.x, chunkCoord.z + 1);
+        }
+
+        // Mark neighboring chunks for remeshing
+        for (const ChunkCoord& neighborCoord : neighborsToUpdate) {
+            Chunk* neighborChunk = getChunk(neighborCoord);
+            if (neighborChunk) {
+                neighborChunk->markForRemesh();
+            }
+        }
     }
 }
 
@@ -205,10 +237,11 @@ void World::loadChunk(ChunkCoord coord) {    if (isChunkLoaded(coord)) {
     chunk->setState(ChunkState::GENERATED);    // Add chunk to the world first
     addChunk(coord, std::move(chunk));
 
-    // Generate the mesh
+    // Mark the chunk for remeshing instead of generating mesh immediately
+    // This allows all neighboring chunks to be loaded first, ensuring cross-chunk face culling works
     Chunk* loadedChunk = getChunk(coord);
     if (loadedChunk) {
-        loadedChunk->generateMesh();
+        loadedChunk->markForRemesh();
     }
 }
 
