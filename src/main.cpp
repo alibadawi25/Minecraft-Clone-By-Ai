@@ -192,14 +192,30 @@ int main()
 
         glm::mat4 projection = glm::perspective(glm::radians(camera->getFOV()),
                                                (float)SCR_WIDTH / (float)SCR_HEIGHT,
-                                               0.1f, farDistance);// Render world
+                                               0.1f, farDistance);        // Render world
         if (world) {
             world->render(view, projection, camera->getPosition());
+
+            // PHASE 9: Update block highlighting based on where the camera is looking
+            if (mouseCaptured && camera) {
+                World::RaycastResult result = world->raycast(camera->getPosition(), camera->getFront(), 10.0f);
+                if (result.hit) {
+                    world->setTargetedBlock(result.blockPos);
+                } else {
+                    world->clearTargetedBlock();
+                }
+            } else {
+                world->clearTargetedBlock();
+            }
+
+            // PHASE 9: Render block highlight after world geometry but before UI
+            world->renderBlockHighlight(view, projection, camera->getPosition());
+
             // PHASE 5: Update chunks around player
             world->updateChunksAroundPlayer(camera->getPosition());
             // PHASE 7: Update dirty chunk meshes after block changes
             world->updateDirtyChunks();
-        }        // Render UI
+        }// Render UI
         if (ui) {
             ui->newFrame();
 

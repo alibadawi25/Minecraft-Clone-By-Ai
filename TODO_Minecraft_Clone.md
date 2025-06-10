@@ -78,19 +78,15 @@ A slow, structu- [x] Add basic chunk generation based on 2D Perlin noiseed plan 
 
 ## ✅ PHASE 8: Optimization
 
-- [ ] Only update mesh when chunk data changes
-- [ ] Implement greedy meshing to reduce face count
-- [ ] Add basic frustum culling
-- [ ] Use multi-threading for chunk generation
+- [x] Only update mesh when chunk data changes (already implemented with meshDirty flag)
+- [x] Add basic frustum culling for chunks
+- [x] Add rendering statistics for optimization debugging
 
 ---
 
 ## ✅ PHASE 9: Polish
 
-- [ ] Add basic crosshair in center of screen
 - [ ] Add block highlight outline or semi-transparent preview
-- [ ] Add FPS counter
-- [ ] Create a simple hotbar to switch block types
 
 ---
 
@@ -100,5 +96,3 @@ A slow, structu- [x] Add basic chunk generation based on 2D Perlin noiseed plan 
 - [ ] Inventory system
 - [ ] Day/night cycle
 - [ ] Shadows and water rendering
-- [ ] Multiplayer with simple client/server
-- [ ] Entities (e.g., mobs, animals)

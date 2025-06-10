@@ -156,11 +156,20 @@ void ImGuiUI::renderDebugWindow(double fps, World* world, Camera* camera) {
     ImGui::Text("FPS: %.1f", fps);
     ImGui::Text("Frame Time: %.3f ms", 1000.0 / fps);
 
-    ImGui::Separator();
-
-    ImGui::Text("World:");
+    ImGui::Separator();    ImGui::Text("World:");
     ImGui::Text("Render Distance: %d chunks", world->getRenderDistance());
     ImGui::Text("Loaded Chunks: %d", world->getLoadedChunkCount());
+
+    // PHASE 8: Frustum culling statistics
+    ImGui::Text("Rendered Chunks: %d", world->getRenderedChunkCount());
+    ImGui::Text("Culled Chunks: %d", world->getCulledChunkCount());
+
+    // Calculate culling efficiency
+    int totalChunks = world->getRenderedChunkCount() + world->getCulledChunkCount();
+    if (totalChunks > 0) {
+        float cullingEfficiency = (float)world->getCulledChunkCount() / totalChunks * 100.0f;
+        ImGui::Text("Culling Efficiency: %.1f%%", cullingEfficiency);
+    }
 
     ImGui::Separator();
 

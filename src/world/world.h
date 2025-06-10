@@ -34,10 +34,12 @@ public:
     // Render distance management
     int getRenderDistance() const { return renderDistance; }
     void setRenderDistance(int distance);
-    float getChunkUnloadDistance() const { return chunkUnloadDistance; }
-
-    // Chunk statistics
+    float getChunkUnloadDistance() const { return chunkUnloadDistance; }    // Chunk statistics
     int getLoadedChunkCount() const { return static_cast<int>(chunks.size()); }
+
+    // PHASE 8: Rendering statistics for optimization debugging
+    int getRenderedChunkCount() const { return lastRenderedChunks; }
+    int getCulledChunkCount() const { return lastCulledChunks; }
 
     // PHASE 7: Player Interaction - Raycasting
     struct RaycastResult {
@@ -53,10 +55,28 @@ public:
     // Cast a ray from camera position in camera direction to find targeted block
     RaycastResult raycast(const glm::vec3& origin, const glm::vec3& direction, float maxDistance = 10.0f) const;
 
+    // PHASE 9: Block highlighting
+    void renderBlockHighlight(const glm::mat4& view, const glm::mat4& projection, const glm::vec3& cameraPos);
+    void setTargetedBlock(const glm::ivec3& blockPos);
+    void clearTargetedBlock();
+    bool hasTargetedBlock() const { return targetedBlockValid; }
+
 private:    std::unordered_map<ChunkCoord, std::unique_ptr<Chunk>, ChunkCoord::Hash> chunks;
     bool initialized;
     SimpleShader* blockShader;
-    MathUtils::SimpleNoise noiseGenerator;  // For terrain generation    // World generation settings - now dynamic
+
+    // PHASE 9: Block highlighting
+    SimpleShader* highlightShader;
+    GLuint highlightVAO, highlightVBO;
+    glm::ivec3 targetedBlockPos;
+    bool targetedBlockValid;
+
+    MathUtils::SimpleNoise noiseGenerator;  // For terrain generation    // Frustum culling for optimization
+    mutable MathUtils::Frustum viewFrustum;
+
+    // PHASE 8: Rendering statistics
+    mutable int lastRenderedChunks = 0;
+    mutable int lastCulledChunks = 0;// World generation settings - now dynamic
     int renderDistance;
     float chunkUnloadDistance;
     static constexpr int DEFAULT_RENDER_DISTANCE = 12;  // Default render distance
@@ -65,4 +85,7 @@ private:    std::unordered_map<ChunkCoord, std::unique_ptr<Chunk>, ChunkCoord::H
     void generateSimpleTerrain(Chunk* chunk);    // PHASE 5: Perlin noise terrain generation
     void generatePerlinTerrain(Chunk* chunk);    // Helper function to determine chunks to load around a position
     std::vector<ChunkCoord> getChunksAroundPosition(const glm::vec3& position) const;
+
+    // PHASE 9: Block highlighting helper
+    void initializeHighlightGeometry();
 };

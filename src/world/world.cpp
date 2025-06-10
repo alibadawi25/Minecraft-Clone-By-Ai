@@ -8,8 +8,9 @@
 #include <algorithm>
 #include <glm/gtc/matrix_transform.hpp>
 
-World::World() : initialized(false), blockShader(nullptr), noiseGenerator(1337),
-                  renderDistance(DEFAULT_RENDER_DISTANCE) {
+World::World() : initialized(false), blockShader(nullptr), highlightShader(nullptr),
+                  highlightVAO(0), highlightVBO(0), targetedBlockValid(false),
+                  noiseGenerator(1337), renderDistance(DEFAULT_RENDER_DISTANCE) {
     // SimpleNoise doesn't need configuration like FastNoiseLite
     chunkUnloadDistance = renderDistance * 1.5f + 1.0f;
 }
@@ -22,8 +23,12 @@ void World::initialize() {
     if (initialized) return;
 
     // Initialize block registry
-    BlockRegistry::initialize();// Initialize block shader
+    BlockRegistry::initialize();    // Initialize block shader
     blockShader = new SimpleShader("shaders/block.vert", "shaders/block.frag");
+
+    // PHASE 9: Initialize highlight shader and geometry
+    highlightShader = new SimpleShader("shaders/highlight.vert", "shaders/highlight.frag");
+    initializeHighlightGeometry();
 
     // PHASE 5: Start with no chunks - they will be loaded around the player
     // Remove the single flat chunk generation from Phase 4    initialized = true;
@@ -32,12 +37,26 @@ void World::initialize() {
 void World::shutdown() {
     if (!initialized) return;
 
-    chunks.clear();
-
-    if (blockShader) {
+    chunks.clear();    if (blockShader) {
         delete blockShader;
         blockShader = nullptr;
-    }    BlockRegistry::shutdown();
+    }
+
+    // PHASE 9: Cleanup highlight resources
+    if (highlightShader) {
+        delete highlightShader;
+        highlightShader = nullptr;
+    }
+
+    if (highlightVAO != 0) {
+        glDeleteVertexArrays(1, &highlightVAO);
+        highlightVAO = 0;
+    }
+
+    if (highlightVBO != 0) {
+        glDeleteBuffers(1, &highlightVBO);
+        highlightVBO = 0;
+    }BlockRegistry::shutdown();
 
     initialized = false;
 }
@@ -80,37 +99,70 @@ void World::addChunk(ChunkCoord coord, std::unique_ptr<Chunk> chunk) {
 void World::render(const glm::mat4& view, const glm::mat4& projection, const glm::vec3& cameraPos) {
     if (!blockShader) return;
 
+    // PHASE 8: Update frustum for culling
+    glm::mat4 viewProjection = projection * view;
+    viewFrustum.updateFromMatrix(viewProjection);
+
     // Use block shader
     blockShader->use();
 
     // Set view and projection matrices (common for all chunks)
     blockShader->setMatrix4("view", view);
-    blockShader->setMatrix4("projection", projection);
-
-    // Set lighting uniforms - balanced daylight setup
+    blockShader->setMatrix4("projection", projection);    // Set lighting uniforms - balanced daylight setup
     blockShader->setVector3("lightDirection", glm::vec3(0.2f, -0.8f, 0.1f));  // More overhead sun
     blockShader->setVector3("lightColor", glm::vec3(0.8f, 0.8f, 0.7f));        // Softer, warm sunlight
     blockShader->setVector3("ambientColor", glm::vec3(0.3f, 0.3f, 0.4f));      // Moderate ambient light
 
-    // Bind texture atlas
+    // PHASE 9: Set fog uniforms based on render distance
+    float renderDistanceWorldUnits = renderDistance * CHUNK_WIDTH;
+    float fogNear = renderDistanceWorldUnits * 0.85f;  // Start fog at 85% of render distance
+    float fogFar = renderDistanceWorldUnits * 1.1f;  // Full fog at 110% of render distance
+    blockShader->setFloat("fogNear", fogNear);
+    blockShader->setFloat("fogFar", fogFar);
+    blockShader->setVector3("fogColor", glm::vec3(0.53f, 0.81f, 0.92f)); // Sky blue fog// Bind texture atlas
     GLuint textureAtlas = BlockRegistry::getTextureAtlas();
     if (textureAtlas != 0) {
         glActiveTexture(GL_TEXTURE0);
         glBindTexture(GL_TEXTURE_2D, textureAtlas);
         blockShader->setInt("blockTexture", 0);
     }
+      // Enable blending for water transparency
+    glEnable(GL_BLEND);
+    glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
 
-    // Render all chunks with proper positioning
+    // Ensure depth testing is enabled but allow depth writes for proper sorting
+    glEnable(GL_DEPTH_TEST);
+    glDepthFunc(GL_LESS);
+
+    // PHASE 8: Render chunks with frustum culling
+    int chunksRendered = 0;
+    int chunksCulled = 0;
+
     for (auto& pair : chunks) {
         if (pair.second && pair.second->isReady()) {
-            // Calculate model matrix for this chunk's world position
+            // Calculate chunk bounding box for frustum culling
             glm::vec3 chunkWorldPos = ChunkUtils::chunkToWorldPos(pair.first);
-            glm::mat4 model = glm::translate(glm::mat4(1.0f), chunkWorldPos);
-            blockShader->setMatrix4("model", model);
+            glm::vec3 chunkMin = chunkWorldPos;
+            glm::vec3 chunkMax = chunkWorldPos + glm::vec3(CHUNK_WIDTH, CHUNK_HEIGHT, CHUNK_DEPTH);
 
-            pair.second->render(view, projection, cameraPos);
+            // PHASE 8: Frustum culling test
+            if (viewFrustum.containsAABB(chunkMin, chunkMax)) {
+                // Calculate model matrix for this chunk's world position
+                glm::mat4 model = glm::translate(glm::mat4(1.0f), chunkWorldPos);
+                blockShader->setMatrix4("model", model);
+
+                pair.second->render(view, projection, cameraPos);
+                chunksRendered++;
+            } else {
+                chunksCulled++;
+            }
         }
-    }
+    }    // Store statistics for debugging
+    lastRenderedChunks = chunksRendered;
+    lastCulledChunks = chunksCulled;
+
+    // Disable blending after rendering
+    glDisable(GL_BLEND);
 }
 
 BlockData World::getBlock(int x, int y, int z) const {
@@ -464,4 +516,86 @@ World::RaycastResult World::raycast(const glm::vec3& origin, const glm::vec3& di
     }
 
     return result;
+}
+
+// PHASE 9: Block highlighting implementation
+void World::initializeHighlightGeometry() {
+    // Create wireframe cube vertices for block outline
+    float vertices[] = {
+        // Bottom face outline
+        0.0f, 0.0f, 0.0f,  1.0f, 0.0f, 0.0f,  // 0 -> 1
+        1.0f, 0.0f, 0.0f,  1.0f, 0.0f, 1.0f,  // 1 -> 2
+        1.0f, 0.0f, 1.0f,  0.0f, 0.0f, 1.0f,  // 2 -> 3
+        0.0f, 0.0f, 1.0f,  0.0f, 0.0f, 0.0f,  // 3 -> 0
+
+        // Top face outline
+        0.0f, 1.0f, 0.0f,  1.0f, 1.0f, 0.0f,  // 4 -> 5
+        1.0f, 1.0f, 0.0f,  1.0f, 1.0f, 1.0f,  // 5 -> 6
+        1.0f, 1.0f, 1.0f,  0.0f, 1.0f, 1.0f,  // 6 -> 7
+        0.0f, 1.0f, 1.0f,  0.0f, 1.0f, 0.0f,  // 7 -> 4
+
+        // Vertical edges
+        0.0f, 0.0f, 0.0f,  0.0f, 1.0f, 0.0f,  // 0 -> 4
+        1.0f, 0.0f, 0.0f,  1.0f, 1.0f, 0.0f,  // 1 -> 5
+        1.0f, 0.0f, 1.0f,  1.0f, 1.0f, 1.0f,  // 2 -> 6
+        0.0f, 0.0f, 1.0f,  0.0f, 1.0f, 1.0f   // 3 -> 7
+    };
+
+    glGenVertexArrays(1, &highlightVAO);
+    glGenBuffers(1, &highlightVBO);
+
+    glBindVertexArray(highlightVAO);
+    glBindBuffer(GL_ARRAY_BUFFER, highlightVBO);
+    glBufferData(GL_ARRAY_BUFFER, sizeof(vertices), vertices, GL_STATIC_DRAW);
+
+    // Position attribute
+    glVertexAttribPointer(0, 3, GL_FLOAT, GL_FALSE, 3 * sizeof(float), (void*)0);
+    glEnableVertexAttribArray(0);
+
+    glBindVertexArray(0);
+}
+
+void World::renderBlockHighlight(const glm::mat4& view, const glm::mat4& projection, const glm::vec3& cameraPos) {
+    if (!targetedBlockValid || !highlightShader) {
+        return;
+    }
+
+    // Enable blending for semi-transparent outline
+    glEnable(GL_BLEND);
+    glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
+
+    // Disable depth writing but keep depth testing
+    glDepthMask(GL_FALSE);
+
+    // Use highlight shader
+    highlightShader->use();
+    highlightShader->setMatrix4("view", view);
+    highlightShader->setMatrix4("projection", projection);
+
+    // Create model matrix for the targeted block
+    glm::mat4 model = glm::translate(glm::mat4(1.0f),
+        glm::vec3(targetedBlockPos.x, targetedBlockPos.y, targetedBlockPos.z));
+    highlightShader->setMatrix4("model", model);
+
+    // Set highlight color and alpha
+    highlightShader->setVector3("highlightColor", glm::vec3(1.0f, 1.0f, 1.0f)); // White outline
+    highlightShader->setFloat("alpha", 0.5f); // Semi-transparent
+
+    // Render wireframe outline
+    glBindVertexArray(highlightVAO);
+    glDrawArrays(GL_LINES, 0, 24); // 12 edges * 2 vertices each
+    glBindVertexArray(0);
+
+    // Restore OpenGL state
+    glDepthMask(GL_TRUE);
+    glDisable(GL_BLEND);
+}
+
+void World::setTargetedBlock(const glm::ivec3& blockPos) {
+    targetedBlockPos = blockPos;
+    targetedBlockValid = true;
+}
+
+void World::clearTargetedBlock() {
+    targetedBlockValid = false;
 }
