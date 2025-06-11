@@ -287,13 +287,28 @@ void World::loadChunk(ChunkCoord coord) {    if (isChunkLoaded(coord)) {
 
     // Set state to generated so mesh generation can proceed
     chunk->setState(ChunkState::GENERATED);    // Add chunk to the world first
-    addChunk(coord, std::move(chunk));
-
-    // Mark the chunk for remeshing instead of generating mesh immediately
+    addChunk(coord, std::move(chunk));    // Mark the chunk for remeshing instead of generating mesh immediately
     // This allows all neighboring chunks to be loaded first, ensuring cross-chunk face culling works
     Chunk* loadedChunk = getChunk(coord);
     if (loadedChunk) {
         loadedChunk->markForRemesh();
+
+        // IMPORTANT: Also mark neighboring chunks for remeshing
+        // When a new chunk is loaded, its neighbors need to update their faces
+        // because they might have been rendering boundary faces that should now be culled
+        std::vector<ChunkCoord> neighborCoords = {
+            ChunkCoord(coord.x - 1, coord.z),     // Left
+            ChunkCoord(coord.x + 1, coord.z),     // Right
+            ChunkCoord(coord.x, coord.z - 1),     // Front
+            ChunkCoord(coord.x, coord.z + 1)      // Back
+        };
+
+        for (const ChunkCoord& neighborCoord : neighborCoords) {
+            Chunk* neighborChunk = getChunk(neighborCoord);
+            if (neighborChunk && neighborChunk->isReady()) {  // KEY: Only remesh if chunk is READY
+                neighborChunk->markForRemesh();
+            }
+        }
     }
 }
 
