@@ -196,7 +196,7 @@ int main()
         if (world) {
             world->render(view, projection, camera->getPosition());
 
-            // PHASE 9: Update block highlighting based on where the camera is looking
+            // Update block highlighting based on where the camera is looking
             if (mouseCaptured && camera) {
                 World::RaycastResult result = world->raycast(camera->getPosition(), camera->getFront(), 10.0f);
                 if (result.hit) {
@@ -208,12 +208,12 @@ int main()
                 world->clearTargetedBlock();
             }
 
-            // PHASE 9: Render block highlight after world geometry but before UI
+            // Render block highlight after world geometry but before UI
             world->renderBlockHighlight(view, projection, camera->getPosition());
 
-            // PHASE 5: Update chunks around player
+            // Update chunks around player
             world->updateChunksAroundPlayer(camera->getPosition());
-            // PHASE 7: Update dirty chunk meshes after block changes
+            // Update dirty chunk meshes after block changes
             world->updateDirtyChunks();
         }// Render UI
         if (ui) {

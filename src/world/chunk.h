@@ -17,6 +17,10 @@ constexpr int CHUNK_HEIGHT = 256;
 constexpr int CHUNK_DEPTH = 16;
 constexpr int BLOCKS_PER_CHUNK = CHUNK_WIDTH * CHUNK_HEIGHT * CHUNK_DEPTH;
 
+// Performance constants
+constexpr int MAX_VERTICES_PER_CHUNK = BLOCKS_PER_CHUNK * 6 * 4; // Max faces * 4 vertices
+constexpr int VERTEX_STRIDE = 8; // Position(3) + Normal(3) + TexCoord(2)
+
 // Chunk coordinate system
 struct ChunkCoord {
     int x, z;

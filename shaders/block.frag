@@ -30,15 +30,18 @@ void main()
     // Combine ambient and diffuse lighting
     vec3 ambient = ambientColor;
     vec3 diffuse = diff * lightColor;
-    vec3 lighting = ambient + diffuse;
+    vec3 lighting = ambient + diffuse;    // Apply lighting to texture
+    vec3 finalColor = lighting * texColor.rgb;
 
-    // Apply lighting to texture
-    vec3 finalColor = lighting * texColor.rgb;    // Water transparency: detect water blocks by their blue color
-    // Water texture is primarily blue (texture coordinates 3,0 in the atlas)
-    float waterThreshold = 0.5; // Lower threshold for better detection
-    bool isWater = (texColor.b > waterThreshold && texColor.b > texColor.r && texColor.b > texColor.g);    float alpha = texColor.a;
+    // Water transparency: detect water blocks by texture coordinates
+    // Water texture is at position (3,0) in 16x16 atlas
+    // Each texture is 1/16 = 0.0625 units wide
+    vec2 atlasPos = floor(TexCoord * 16.0) / 16.0;
+    bool isWater = (atlasPos.x >= 0.1875 && atlasPos.x < 0.25 && atlasPos.y >= 0.0 && atlasPos.y < 0.0625);
+
+    float alpha = texColor.a;
     if (isWater) {
-        alpha = 0.6; // Make water 60% opaque (40% transparent)
+        alpha = 0.7; // Make water 70% opaque (30% transparent)
     }
 
     // Apply fog

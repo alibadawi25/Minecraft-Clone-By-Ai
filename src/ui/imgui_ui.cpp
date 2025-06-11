@@ -160,7 +160,7 @@ void ImGuiUI::renderDebugWindow(double fps, World* world, Camera* camera) {
     ImGui::Text("Render Distance: %d chunks", world->getRenderDistance());
     ImGui::Text("Loaded Chunks: %d", world->getLoadedChunkCount());
 
-    // PHASE 8: Frustum culling statistics
+    // Frustum culling statistics
     ImGui::Text("Rendered Chunks: %d", world->getRenderedChunkCount());
     ImGui::Text("Culled Chunks: %d", world->getCulledChunkCount());
 

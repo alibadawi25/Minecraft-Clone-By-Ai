@@ -114,12 +114,12 @@ void Chunk::generateMesh() {
     // Prevent infinite mesh regeneration
     if (state == ChunkState::MESHING) {
         return;
-    }
+    }    setState(ChunkState::MESHING);
 
-    setState(ChunkState::MESHING);    std::vector<float> vertices;
-    vertices.reserve(BLOCKS_PER_CHUNK * 6 * 4 * 8); // Estimate max vertices
+    std::vector<float> vertices;
+    vertices.reserve(MAX_VERTICES_PER_CHUNK * VERTEX_STRIDE);
 
-    // FIRST PASS: Render solid blocks first for proper depth testing
+    // First pass: Render solid blocks for proper depth testing
     for (int y = 0; y < CHUNK_HEIGHT; y++) {
         for (int z = 0; z < CHUNK_DEPTH; z++) {
             for (int x = 0; x < CHUNK_WIDTH; x++) {
@@ -207,10 +207,10 @@ void Chunk::generateMesh() {
     setState(ChunkState::READY);
 }
 
-void Chunk::render(const glm::mat4& view, const glm::mat4& projection, const glm::vec3& cameraPos) {
+void Chunk::render(const glm::mat4& /* view */, const glm::mat4& /* projection */, const glm::vec3& cameraPos) {
     if (!isReady() || !hasGeometry) {
         return;
-    }    // Distance-based culling for performance
+    }// Distance-based culling for performance
     // Calculate distance from camera to chunk center
     glm::vec3 chunkCenter = getWorldPosition() + glm::vec3(CHUNK_WIDTH * 0.5f, CHUNK_HEIGHT * 0.5f, CHUNK_DEPTH * 0.5f);
     float distance = glm::length(cameraPos - chunkCenter);
@@ -410,10 +410,10 @@ void Chunk::addFace(std::vector<float>& vertices, const glm::vec3& pos,
     }
 }
 
-void Chunk::addQuadVertices(std::vector<float>& vertices,
-                           const std::array<glm::vec3, 4>& corners,
-                           const glm::vec3& normal,
-                           const glm::vec2& texCoords) {
+void Chunk::addQuadVertices(std::vector<float>& /* vertices */,
+                           const std::array<glm::vec3, 4>& /* corners */,
+                           const glm::vec3& /* normal */,
+                           const glm::vec2& /* texCoords */) {
     // This is a helper function for more complex face generation
     // Currently using simpler addFace method
 }
@@ -507,9 +507,7 @@ namespace ChunkUtils {
         float dx = point.x - nearestX;
         float dz = point.z - nearestZ;
         return std::sqrt(dx * dx + dz * dz);
-    }
-
-    bool isValidChunkCoord(int x, int z) {
+    }    bool isValidChunkCoord(int /* x */, int /* z */) {
         // For infinite worlds, all chunk coordinates are valid
         // Could add limits here if needed
         return true;

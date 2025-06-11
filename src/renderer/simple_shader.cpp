@@ -42,28 +42,28 @@ void SimpleShader::use() {
 }
 
 void SimpleShader::setFloat(const std::string& name, float value) {
-    int location = glGetUniformLocation(shaderProgram, name.c_str());
+    GLint location = getUniformLocation(name);
     if (location != -1) {
         glUniform1f(location, value);
     }
 }
 
 void SimpleShader::setInt(const std::string& name, int value) {
-    int location = glGetUniformLocation(shaderProgram, name.c_str());
+    GLint location = getUniformLocation(name);
     if (location != -1) {
         glUniform1i(location, value);
     }
 }
 
 void SimpleShader::setVector3(const std::string& name, const glm::vec3& value) {
-    int location = glGetUniformLocation(shaderProgram, name.c_str());
+    GLint location = getUniformLocation(name);
     if (location != -1) {
         glUniform3fv(location, 1, glm::value_ptr(value));
     }
 }
 
 void SimpleShader::setMatrix4(const std::string& name, const glm::mat4& matrix) {
-    int location = glGetUniformLocation(shaderProgram, name.c_str());
+    GLint location = getUniformLocation(name);
     if (location != -1) {
         glUniformMatrix4fv(location, 1, GL_FALSE, glm::value_ptr(matrix));
     }
@@ -92,4 +92,15 @@ unsigned int SimpleShader::compileShader(const std::string& source, GLenum type)
     }
 
     return shader;
+}
+
+GLint SimpleShader::getUniformLocation(const std::string& name) const {
+    auto it = uniformLocationCache.find(name);
+    if (it != uniformLocationCache.end()) {
+        return it->second;
+    }
+
+    GLint location = glGetUniformLocation(shaderProgram, name.c_str());
+    uniformLocationCache[name] = location;
+    return location;
 }

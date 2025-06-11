@@ -138,9 +138,7 @@ set(UTILS_SOURCES
 )
 
 set(RENDERER_SOURCES
-    src/renderer/buffer.cpp
     src/renderer/camera.cpp
-    src/renderer/shader.cpp
     src/renderer/simple_shader.cpp
     src/renderer/texture.cpp
 )

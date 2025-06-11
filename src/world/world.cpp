@@ -1,4 +1,9 @@
 // filepath: c:\Users\aliba\OneDrive\Documents\ai-karim\src\world\world.cpp
+/**
+ * @file world.cpp
+ * @brief World management implementation with chunk loading, terrain generation, and rendering
+ */
+
 #include "world.h"
 #include "chunk.h"
 #include "block.h"
@@ -11,8 +16,7 @@
 World::World() : initialized(false), blockShader(nullptr), highlightShader(nullptr),
                   highlightVAO(0), highlightVBO(0), targetedBlockValid(false),
                   noiseGenerator(1337), renderDistance(DEFAULT_RENDER_DISTANCE) {
-    // SimpleNoise doesn't need configuration like FastNoiseLite
-    chunkUnloadDistance = renderDistance * 1.5f + 1.0f;
+    chunkUnloadDistance = renderDistance * CHUNK_UNLOAD_MULTIPLIER + 1.0f;
 }
 
 World::~World() {
@@ -20,18 +24,18 @@ World::~World() {
 }
 
 void World::initialize() {
-    if (initialized) return;
+    if (initialized) return;    // Initialize block registry
+    BlockRegistry::initialize();
 
-    // Initialize block registry
-    BlockRegistry::initialize();    // Initialize block shader
+    // Initialize block shader
     blockShader = new SimpleShader("shaders/block.vert", "shaders/block.frag");
 
-    // PHASE 9: Initialize highlight shader and geometry
+    // Initialize highlight shader and geometry
     highlightShader = new SimpleShader("shaders/highlight.vert", "shaders/highlight.frag");
     initializeHighlightGeometry();
 
-    // PHASE 5: Start with no chunks - they will be loaded around the player
-    // Remove the single flat chunk generation from Phase 4    initialized = true;
+    // Start with no chunks - they will be loaded around the player
+    initialized = true;
 }
 
 void World::shutdown() {
@@ -39,10 +43,10 @@ void World::shutdown() {
 
     chunks.clear();    if (blockShader) {
         delete blockShader;
-        blockShader = nullptr;
+    blockShader = nullptr;
     }
 
-    // PHASE 9: Cleanup highlight resources
+    // Cleanup highlight resources
     if (highlightShader) {
         delete highlightShader;
         highlightShader = nullptr;
@@ -99,27 +103,27 @@ void World::addChunk(ChunkCoord coord, std::unique_ptr<Chunk> chunk) {
 void World::render(const glm::mat4& view, const glm::mat4& projection, const glm::vec3& cameraPos) {
     if (!blockShader) return;
 
-    // PHASE 8: Update frustum for culling
+    // Update frustum for culling
     glm::mat4 viewProjection = projection * view;
     viewFrustum.updateFromMatrix(viewProjection);
 
-    // Use block shader
+    // Configure shader
     blockShader->use();
-
-    // Set view and projection matrices (common for all chunks)
     blockShader->setMatrix4("view", view);
-    blockShader->setMatrix4("projection", projection);    // Set lighting uniforms - balanced daylight setup
-    blockShader->setVector3("lightDirection", glm::vec3(0.2f, -0.8f, 0.1f));  // More overhead sun
-    blockShader->setVector3("lightColor", glm::vec3(0.8f, 0.8f, 0.7f));        // Softer, warm sunlight
-    blockShader->setVector3("ambientColor", glm::vec3(0.3f, 0.3f, 0.4f));      // Moderate ambient light
+    blockShader->setMatrix4("projection", projection);
 
-    // PHASE 9: Set fog uniforms based on render distance
+    // Set lighting uniforms
+    blockShader->setVector3("lightDirection", glm::vec3(0.2f, -0.8f, 0.1f));
+    blockShader->setVector3("lightColor", glm::vec3(0.8f, 0.8f, 0.7f));
+    blockShader->setVector3("ambientColor", glm::vec3(0.3f, 0.3f, 0.4f));
+
+    // Set fog uniforms based on render distance
     float renderDistanceWorldUnits = renderDistance * CHUNK_WIDTH;
-    float fogNear = renderDistanceWorldUnits * 0.85f;  // Start fog at 85% of render distance
-    float fogFar = renderDistanceWorldUnits * 1.1f;  // Full fog at 110% of render distance
+    float fogNear = renderDistanceWorldUnits * 0.85f;
+    float fogFar = renderDistanceWorldUnits * 1.1f;
     blockShader->setFloat("fogNear", fogNear);
     blockShader->setFloat("fogFar", fogFar);
-    blockShader->setVector3("fogColor", glm::vec3(0.53f, 0.81f, 0.92f)); // Sky blue fog// Bind texture atlas
+    blockShader->setVector3("fogColor", glm::vec3(0.53f, 0.81f, 0.92f));    // Bind texture atlas
     GLuint textureAtlas = BlockRegistry::getTextureAtlas();
     if (textureAtlas != 0) {
         glActiveTexture(GL_TEXTURE0);
@@ -130,11 +134,12 @@ void World::render(const glm::mat4& view, const glm::mat4& projection, const glm
     glEnable(GL_BLEND);
     glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
 
-    // Ensure depth testing is enabled but allow depth writes for proper sorting
+    // Enable depth testing but allow depth writes for proper sorting
     glEnable(GL_DEPTH_TEST);
     glDepthFunc(GL_LESS);
+    glDepthMask(GL_TRUE); // Allow depth writes for solid blocks
 
-    // PHASE 8: Render chunks with frustum culling
+    // Render chunks with frustum culling
     int chunksRendered = 0;
     int chunksCulled = 0;
 
@@ -145,19 +150,19 @@ void World::render(const glm::mat4& view, const glm::mat4& projection, const glm
             glm::vec3 chunkMin = chunkWorldPos;
             glm::vec3 chunkMax = chunkWorldPos + glm::vec3(CHUNK_WIDTH, CHUNK_HEIGHT, CHUNK_DEPTH);
 
-            // PHASE 8: Frustum culling test
+            // Frustum culling test
             if (viewFrustum.containsAABB(chunkMin, chunkMax)) {
-                // Calculate model matrix for this chunk's world position
                 glm::mat4 model = glm::translate(glm::mat4(1.0f), chunkWorldPos);
                 blockShader->setMatrix4("model", model);
-
                 pair.second->render(view, projection, cameraPos);
                 chunksRendered++;
             } else {
                 chunksCulled++;
             }
         }
-    }    // Store statistics for debugging
+    }
+
+    // Store statistics for debugging
     lastRenderedChunks = chunksRendered;
     lastCulledChunks = chunksCulled;
 
@@ -221,7 +226,7 @@ void World::setBlock(int x, int y, int z, BlockData block) {
 void World::generateSimpleTerrain(Chunk* chunk) {
     if (!chunk) return;
 
-    // Create simple flat world for Phase 4
+    // Create simple flat world
     // Ground level at y=64, everything below is dirt, everything above is air
     const int groundLevel = 64;
     const int bedrockLevel = 0;
@@ -247,9 +252,6 @@ void World::generateSimpleTerrain(Chunk* chunk) {
 }
 
 void World::updateChunksAroundPlayer(const glm::vec3& playerPos) {
-    // Get player's chunk coordinate
-    ChunkCoord playerChunk = ChunkUtils::worldToChunkCoord(playerPos);
-
     // Get list of chunks that should be loaded around player
     std::vector<ChunkCoord> chunksToLoad = getChunksAroundPosition(playerPos);
 
@@ -344,13 +346,20 @@ std::vector<ChunkCoord> World::getChunksAroundPosition(const glm::vec3& position
 }
 
 void World::updateDirtyChunks() {
-    // Check all loaded chunks for those that need mesh regeneration
+    // Throttle mesh generation to prevent frame drops - dynamically based on render distance
+    int meshesGenerated = 0;
+    int maxMeshesThisFrame = getMaxMeshesPerFrame();
+
     for (auto& pair : chunks) {
+        if (meshesGenerated >= maxMeshesThisFrame) {
+            break; // Limit mesh generation per frame
+        }
+
         Chunk* chunk = pair.second.get();
         if (chunk && chunk->needsRemeshing()) {
             if (chunk->getState() == ChunkState::GENERATED || chunk->getState() == ChunkState::READY) {
-                // Regenerate mesh for this chunk
                 chunk->generateMesh();
+                meshesGenerated++;
             }
         }
     }
@@ -370,40 +379,33 @@ void World::generatePerlinTerrain(Chunk* chunk) {
             // Get height from noise with multiple octaves for more interesting terrain
             float continentalness = noiseGenerator.fractalNoise2D(worldX * 0.001f, worldZ * 0.001f, 4, 0.5f);
             float heightNoise = noiseGenerator.fractalNoise2D(worldX * 0.01f, worldZ * 0.01f, 4, 0.5f);
-            float detailNoise = noiseGenerator.fractalNoise2D(worldX * 0.05f, worldZ * 0.05f, 2, 0.5f);
+            float detailNoise = noiseGenerator.fractalNoise2D(worldX * 0.05f, worldZ * 0.05f, 2, 0.5f);            // Combine noise values to create varied terrain
+            float combinedNoise = continentalness * 0.7f + heightNoise * 0.2f + detailNoise * 0.1f;
 
-            // Combine noise values to create varied terrain
-            float combinedNoise = continentalness * 0.7f + heightNoise * 0.2f + detailNoise * 0.1f;            // Calculate terrain height
-            int baseHeight = 64;
-            int waterLevel = 30; // Much lower water level for more land and less flooding
-            int terrainHeight = static_cast<int>(baseHeight + combinedNoise * 40);
+            // Calculate terrain height
+            int terrainHeight = static_cast<int>(BASE_HEIGHT + combinedNoise * 40);
 
             // Clamp height to valid range
             terrainHeight = std::max(5, std::min(terrainHeight, CHUNK_HEIGHT - 10));
 
             // Generate column of blocks
             for (int y = 0; y < CHUNK_HEIGHT; ++y) {
-                BlockType blockType = BlockType::AIR;
-
-                if (y == 0) {
-                    // Bedrock layer
+                BlockType blockType = BlockType::AIR;                if (y == 0) {
                     blockType = BlockType::BEDROCK;
-                } else if (y < terrainHeight - 5) {
-                    // Stone layer
+                } else if (y < terrainHeight - STONE_DEPTH) {
                     blockType = BlockType::STONE;
                 } else if (y < terrainHeight - 1) {
-                    // Dirt layer
                     blockType = BlockType::DIRT;
                 } else if (y <= terrainHeight) {
                     // Surface layer - grass above water level, sand below
-                    if (terrainHeight > waterLevel) {
+                    if (terrainHeight > WATER_LEVEL) {
                         blockType = BlockType::GRASS;
                     } else {
                         blockType = BlockType::SAND;
                     }
                 }
                 // Water fills areas below water level where terrain is also below water level
-                else if (y <= waterLevel && terrainHeight < waterLevel) {
+                else if (y <= WATER_LEVEL && terrainHeight < WATER_LEVEL) {
                     blockType = BlockType::WATER;
                 }
 
@@ -416,12 +418,11 @@ void World::generatePerlinTerrain(Chunk* chunk) {
 }
 
 void World::setRenderDistance(int distance) {
-    // Clamp render distance to reasonable values
     renderDistance = std::max(2, std::min(32, distance));
-    chunkUnloadDistance = renderDistance * 1.5f + 1.0f;
+    chunkUnloadDistance = renderDistance * CHUNK_UNLOAD_MULTIPLIER + 1.0f;
 }
 
-// PHASE 7: Player Interaction - Raycasting Implementation
+// Player Interaction - Raycasting Implementation
 World::RaycastResult World::raycast(const glm::vec3& origin, const glm::vec3& direction, float maxDistance) const {
     RaycastResult result;
     result.hit = false;
@@ -533,7 +534,7 @@ World::RaycastResult World::raycast(const glm::vec3& origin, const glm::vec3& di
     return result;
 }
 
-// PHASE 9: Block highlighting implementation
+// Block highlighting implementation
 void World::initializeHighlightGeometry() {
     // Create wireframe cube vertices for block outline
     float vertices[] = {
@@ -570,7 +571,7 @@ void World::initializeHighlightGeometry() {
     glBindVertexArray(0);
 }
 
-void World::renderBlockHighlight(const glm::mat4& view, const glm::mat4& projection, const glm::vec3& cameraPos) {
+void World::renderBlockHighlight(const glm::mat4& view, const glm::mat4& projection, const glm::vec3& /* cameraPos */) {
     if (!targetedBlockValid || !highlightShader) {
         return;
     }
