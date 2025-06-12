@@ -44,7 +44,7 @@
 
 ## � Screenshots
 
-![Minecraft Clone with Gradient Sky](assets/screenshot.png)
+![Minecraft Clone with Gradient Sky](assets/textures/screenshot.png)
 
 _Beautiful gradient sky system with atmospheric fog blending seamlessly into procedurally generated terrain. Features include dynamic chunk-based world generation, real-time block interaction, and optimized rendering performance._
 
