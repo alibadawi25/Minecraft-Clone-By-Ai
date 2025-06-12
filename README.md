@@ -42,7 +42,13 @@
 - **Memory Efficient**: Smart chunk management with distance-based unloading
 - **Cross-Platform Ready**: GLFW-based with MinGW64 and MSVC support
 
-## 📋 Prerequisites
+## � Screenshots
+
+![Minecraft Clone with Gradient Sky](assets/screenshot.png)
+
+_Beautiful gradient sky system with atmospheric fog blending seamlessly into procedurally generated terrain. Features include dynamic chunk-based world generation, real-time block interaction, and optimized rendering performance._
+
+## �📋 Prerequisites
 
 ### System Requirements
 
