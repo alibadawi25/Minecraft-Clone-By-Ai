@@ -145,6 +145,8 @@ set(RENDERER_SOURCES
 
 set(UI_SOURCES
     src/ui/imgui_ui.cpp
+    src/ui/game_state.cpp
+    src/ui/main_menu.cpp
 )
 
 # Add ImGui library

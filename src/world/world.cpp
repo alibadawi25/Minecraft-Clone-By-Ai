@@ -615,3 +615,17 @@ void World::setTargetedBlock(const glm::ivec3& blockPos) {
 void World::clearTargetedBlock() {
     targetedBlockValid = false;
 }
+
+void World::regenerateWorld(unsigned int newSeed) {
+    // Clear all existing chunks
+    chunks.clear();
+
+    // Update the noise generator with new seed
+    noiseGenerator = MathUtils::SimpleNoise(newSeed);
+
+    // Clear targeted block
+    clearTargetedBlock();
+
+    // The world is ready for new chunk generation with the new seed
+    // Chunks will be generated as needed when the player moves around
+}

@@ -15,6 +15,9 @@ public:
     void initialize();
     void shutdown();
 
+    // World regeneration with new seed
+    void regenerateWorld(unsigned int newSeed);
+
     // Generate a simple flat world
     void generateFlatChunk(ChunkCoord coord);    // Chunk management
     Chunk* getChunk(ChunkCoord coord);
