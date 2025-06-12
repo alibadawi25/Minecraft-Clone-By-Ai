@@ -141,6 +141,7 @@ set(RENDERER_SOURCES
     src/renderer/camera.cpp
     src/renderer/simple_shader.cpp
     src/renderer/texture.cpp
+    src/renderer/sky_renderer.cpp
 )
 
 set(UI_SOURCES

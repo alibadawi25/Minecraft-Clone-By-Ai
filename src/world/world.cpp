@@ -115,15 +115,14 @@ void World::render(const glm::mat4& view, const glm::mat4& projection, const glm
     // Set lighting uniforms
     blockShader->setVector3("lightDirection", glm::vec3(0.2f, -0.8f, 0.1f));
     blockShader->setVector3("lightColor", glm::vec3(0.8f, 0.8f, 0.7f));
-    blockShader->setVector3("ambientColor", glm::vec3(0.3f, 0.3f, 0.4f));
-
-    // Set fog uniforms based on render distance
+    blockShader->setVector3("ambientColor", glm::vec3(0.3f, 0.3f, 0.4f));    // Set fog uniforms based on render distance (more aggressive fog to hide generation)
     float renderDistanceWorldUnits = renderDistance * CHUNK_WIDTH;
-    float fogNear = renderDistanceWorldUnits * 0.85f;
-    float fogFar = renderDistanceWorldUnits * 1.1f;
+    float fogNear = renderDistanceWorldUnits * 0.60f;  // Start fog earlier
+    float fogFar = renderDistanceWorldUnits * 0.90f;   // End fog before render edge
     blockShader->setFloat("fogNear", fogNear);
     blockShader->setFloat("fogFar", fogFar);
-    blockShader->setVector3("fogColor", glm::vec3(0.53f, 0.81f, 0.92f));    // Bind texture atlas
+    // Match fog color to sky horizon color: #87CEEB (Sky Blue)
+    blockShader->setVector3("fogColor", glm::vec3(0.529f, 0.808f, 0.922f));// Bind texture atlas
     GLuint textureAtlas = BlockRegistry::getTextureAtlas();
     if (textureAtlas != 0) {
         glActiveTexture(GL_TEXTURE0);

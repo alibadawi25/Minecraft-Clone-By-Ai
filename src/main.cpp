@@ -11,6 +11,7 @@
 #include "config.h"
 #include "renderer/simple_shader.h"
 #include "renderer/camera.h"
+#include "renderer/sky_renderer.h"
 #include "world/world.h"
 #include "ui/imgui_ui.h"
 #include "ui/game_state.h"
@@ -38,6 +39,9 @@ bool g_running = true;
 
 // World system
 World* world = nullptr;
+
+// Sky system
+SkyRenderer* skyRenderer = nullptr;
 
 // Camera system variables
 Camera* camera = nullptr;
@@ -144,11 +148,19 @@ int main()
     mainMenu = new MainMenu();
 
     // Initially disable mouse capture for menu
-    glfwSetInputMode(window, GLFW_CURSOR, GLFW_CURSOR_NORMAL);
-
-    // Initialize world system
+    glfwSetInputMode(window, GLFW_CURSOR, GLFW_CURSOR_NORMAL);    // Initialize world system
     world = new World();
-    world->initialize();    // Initialize camera - position above the ground
+    world->initialize();
+
+    // Initialize sky system
+    skyRenderer = new SkyRenderer();
+    if (!skyRenderer->initialize()) {
+        std::cerr << "Failed to initialize sky renderer" << std::endl;
+        delete skyRenderer;
+        skyRenderer = nullptr;
+    }
+
+    // Initialize camera - position above the ground
     camera = new Camera(glm::vec3(8.0f, 70.0f, 8.0f));
 
     // FPS tracking variables
@@ -195,15 +207,13 @@ int main()
                     mainMenu->handleInput(window, gameStateManager);
                     ui->render();
                 }
-                break;
-
-            case GameState::PLAYING:
+                break;            case GameState::PLAYING:
                 // Game mode - capture cursor, process input, render world
                 glfwSetInputMode(window, GLFW_CURSOR, GLFW_CURSOR_DISABLED);
                 processInput(window);
 
-                // Set background color and clear screen
-                glClearColor(0.53f, 0.81f, 0.92f, 1.0f);  // Sky blue color
+                // Clear screen (sky will render the background)
+                glClearColor(0.0f, 0.0f, 0.0f, 1.0f);  // Black background
                 glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
 
                 // Render game world (existing rendering code)
@@ -212,8 +222,8 @@ int main()
                 // Paused state - show cursor, render game background but with pause menu overlay
                 glfwSetInputMode(window, GLFW_CURSOR, GLFW_CURSOR_NORMAL);
 
-                // Set background color and clear screen
-                glClearColor(0.53f, 0.81f, 0.92f, 1.0f);  // Sky blue color
+                // Clear screen (sky will render the background)
+                glClearColor(0.0f, 0.0f, 0.0f, 1.0f);  // Black background
                 glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
 
                 // Render the game world (frozen in background - no updates)
@@ -258,6 +268,10 @@ int main()
     if (ui) {
         delete ui;
         ui = nullptr;
+    }
+    if (skyRenderer) {
+        delete skyRenderer;
+        skyRenderer = nullptr;
     }
     if (world) {
         delete world;
@@ -517,11 +531,14 @@ void renderGameWorld()
         float renderDistanceWorldUnits = diagonalDistance * 16.0f;
         farDistance = renderDistanceWorldUnits + (3.0f * 16.0f) + 256.0f + 50.0f;
         farDistance = std::max(farDistance, 300.0f);
-    }
-
-    glm::mat4 projection = glm::perspective(glm::radians(camera->getFOV()),
+    }    glm::mat4 projection = glm::perspective(glm::radians(camera->getFOV()),
                                            (float)SCR_WIDTH / (float)SCR_HEIGHT,
                                            0.1f, farDistance);
+
+    // Render sky first (as background)
+    if (skyRenderer) {
+        skyRenderer->render(view, projection);
+    }
 
     // Render world
     if (world) {
@@ -593,11 +610,14 @@ void renderGameWorldFrozen()
         float renderDistanceWorldUnits = diagonalDistance * 16.0f;
         farDistance = renderDistanceWorldUnits + (3.0f * 16.0f) + 256.0f + 50.0f;
         farDistance = std::max(farDistance, 300.0f);
-    }
-
-    glm::mat4 projection = glm::perspective(glm::radians(camera->getFOV()),
+    }    glm::mat4 projection = glm::perspective(glm::radians(camera->getFOV()),
                                            (float)SCR_WIDTH / (float)SCR_HEIGHT,
                                            0.1f, farDistance);
+
+    // Render sky first (as background)
+    if (skyRenderer) {
+        skyRenderer->render(view, projection);
+    }
 
     // Render world (without updates)
     if (world) {
