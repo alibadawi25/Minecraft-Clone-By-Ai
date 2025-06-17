@@ -5,6 +5,9 @@
 #include <algorithm>
 #include <cmath>
 
+// Global flag to reset static noise generators when seed changes
+bool g_resetChunkNoise = false;
+
 // Face vertices for cube mesh generation (in local coordinates)
 // All faces ordered counter-clockwise when viewed from outside the cube
 const std::array<std::array<glm::vec3, 4>, 6> Chunk::FACE_VERTICES = {{
@@ -58,10 +61,17 @@ const std::array<glm::vec3, 6> Chunk::FACE_NORMALS = {{
 
 Chunk::Chunk(ChunkCoord coord, World* world)
     : coord(coord), state(ChunkState::EMPTY), world(world), VAO(0), VBO(0),
-      vertexCount(0), meshDirty(true), hasGeometry(false) {
+      vertexCount(0), meshDirty(true), hasGeometry(false), hadAllNeighbors(false), lastNeighborCheck(0.0f) {
 
     // Initialize all blocks to air
-    blocks.fill(BlockData(BlockType::AIR));    // Initialize OpenGL resources
+    blocks.fill(BlockData(BlockType::AIR));
+
+    // Initialize neighbor tracking
+    for (int i = 0; i < 4; i++) {
+        neighborsAvailable[i] = false;
+    }
+
+    // Initialize OpenGL resources
     initializeGL();
 }
 
@@ -160,18 +170,25 @@ void Chunk::generateMesh() {
                     continue;
                 }
 
-                const Block& block = BlockRegistry::getBlock(blockData.type);
-
-                // SECOND PASS: Only render transparent blocks
+                const Block& block = BlockRegistry::getBlock(blockData.type);                // SECOND PASS: Only render transparent blocks
                 if (!block.isTransparent) {
                     continue;
                 }
 
                 glm::vec3 blockPos(x, y, z);
 
-                // Check each face for visibility
+                // Check each face for visibility - use water-specific culling for water blocks
                 for (int face = 0; face < 6; face++) {
-                    if (shouldRenderFace(x, y, z, static_cast<CubeFace>(face))) {
+                    bool shouldRender;
+                    if (blockData.type == BlockType::WATER) {
+                        // Use water-specific face culling to prevent holes at chunk boundaries
+                        shouldRender = shouldRenderWaterFace(x, y, z, static_cast<CubeFace>(face));
+                    } else {
+                        // Use normal face culling for other transparent blocks
+                        shouldRender = shouldRenderFace(x, y, z, static_cast<CubeFace>(face));
+                    }
+
+                    if (shouldRender) {
                         addFace(vertices, blockPos, static_cast<CubeFace>(face), blockData.type);
                     }
                 }
@@ -304,38 +321,39 @@ bool Chunk::shouldRenderFace(int x, int y, int z, CubeFace face) const {
 
         // Check if the neighboring chunk exists
         ChunkCoord neighborChunkCoord = ChunkUtils::worldToChunkCoord(worldAdjacentPos.x, worldAdjacentPos.z);
-        const Chunk* neighborChunk = world->getChunk(neighborChunkCoord);
-
-        if (neighborChunk) {
+        const Chunk* neighborChunk = world->getChunk(neighborChunkCoord);        if (neighborChunk) {
             // Neighboring chunk exists, get the actual adjacent block
             BlockData adjacentBlock = world->getBlock(worldAdjacentPos.x, worldAdjacentPos.y, worldAdjacentPos.z);
             return current.shouldRenderFace(adjacentBlock.type);
         } else {
-            // Neighboring chunk doesn't exist yet - check if we should generate terrain assumption
-            // For cross-chunk face culling during initial generation, we need to make an educated guess
-            // about what terrain would be in the neighboring chunk
+            // Neighboring chunk doesn't exist yet - use smarter assumptions
+            // For water blocks specifically, we need to be more careful about face culling
 
-            // If we're at or below sea level and the current block is solid, assume neighbor might be solid too
-            // This prevents underwater terrain from having too many exposed faces during initial generation
-            const int SEA_LEVEL = 64; // Should match world generation
+            if (current.type == BlockType::WATER) {
+                // Water blocks should render faces at chunk boundaries
+                // This prevents the "missing water" effect when neighboring chunks aren't loaded
+                return true;
+            }
 
-            if (y <= SEA_LEVEL && current.isSolid) {
-                // For solid blocks at/below sea level, be more conservative about rendering faces
-                // This reduces visual artifacts during initial chunk loading
+            // For solid blocks, make educated guesses based on height and terrain
+            const int WATER_LEVEL = gTerrainSettings.waterLevel; // Use actual water level
+
+            if (y <= WATER_LEVEL) {
+                // Below/at water level
                 if (face == CubeFace::TOP) {
-                    // Always render top faces - sky is always visible
+                    // Always render top faces - important for water surface visibility
                     return true;
                 } else if (face == CubeFace::BOTTOM) {
-                    // Usually don't render bottom faces underground
-                    return y <= 5; // Only render near bedrock level
+                    // Render bottom faces only near bedrock to avoid overdraw
+                    return y <= 5;
                 } else {
-                    // For side faces, assume neighbor might be solid (conservative approach)
-                    // This reduces flickering during chunk loading
-                    return current.isTransparent; // Only render if current block is transparent
+                    // For side faces below water level:
+                    // - Always render transparent block faces
+                    // - For solid blocks, assume neighbor might exist (conservative culling)
+                    return current.isTransparent || (current.isSolid && y < WATER_LEVEL - 5);
                 }
             } else {
-                // Above sea level or non-solid blocks - default to rendering the face
-                // This ensures proper terrain visibility and water transparency
+                // Above water level - assume air in neighboring chunks (render face)
                 return true;
             }
         }
@@ -526,6 +544,12 @@ void Chunk::generate() {
     static FastNoiseLite mountainNoise;
     static bool initialized = false;
 
+    // Check if we need to reset (for new seeds)
+    if (g_resetChunkNoise) {
+        initialized = false;
+        g_resetChunkNoise = false;
+    }
+
     if (!initialized) {
         // Base terrain: rolling hills
         baseNoise.SetSeed(gTerrainSettings.baseSeed);
@@ -645,4 +669,120 @@ void Chunk::generate() {
     }
     setState(ChunkState::GENERATED);
 #endif
+}
+
+bool Chunk::shouldRenderWaterFace(int x, int y, int z, CubeFace face) const {
+    // Optimized water face culling: only render top faces unless adjacent to air
+
+    // Calculate adjacent block position
+    glm::ivec3 adjacentPos(x, y, z);
+    switch (face) {
+        case CubeFace::FRONT:  adjacentPos.z += 1; break;
+        case CubeFace::BACK:   adjacentPos.z -= 1; break;
+        case CubeFace::LEFT:   adjacentPos.x -= 1; break;
+        case CubeFace::RIGHT:  adjacentPos.x += 1; break;
+        case CubeFace::TOP:    adjacentPos.y += 1; break;
+        case CubeFace::BOTTOM: adjacentPos.y -= 1; break;
+    }
+
+    // Check if adjacent position is within this chunk
+    if (isInBounds(adjacentPos.x, adjacentPos.y, adjacentPos.z)) {
+        BlockData adjacentBlock = getBlock(adjacentPos.x, adjacentPos.y, adjacentPos.z);
+
+        // Only render face if adjacent block is air
+        // This aggressively culls underwater faces for better performance
+        return adjacentBlock.type == BlockType::AIR;
+    }
+
+    // At chunk boundary - check neighboring chunks
+    if (world) {
+        glm::vec3 chunkWorldPos = getWorldPosition();
+        glm::ivec3 worldAdjacentPos(
+            static_cast<int>(chunkWorldPos.x) + adjacentPos.x,
+            adjacentPos.y,
+            static_cast<int>(chunkWorldPos.z) + adjacentPos.z
+        );
+
+        BlockData adjacentBlock = world->getBlock(worldAdjacentPos.x, worldAdjacentPos.y, worldAdjacentPos.z);
+
+        // Only render if adjacent is air
+        if (adjacentBlock.type == BlockType::AIR) {
+            return true;
+        } else {
+            return false;
+        }
+    }
+
+    // At chunk boundary with no neighbor loaded - only render top faces to prevent holes
+    // This ensures water surface is visible while culling underwater faces
+    return face == CubeFace::TOP;
+}
+
+void Chunk::checkNeighbors() {
+    if (!world) return;
+
+    // Check all 4 neighboring chunks (N, S, E, W)
+    ChunkCoord neighborCoords[4] = {
+        {coord.x, coord.z + 1}, // North
+        {coord.x, coord.z - 1}, // South
+        {coord.x + 1, coord.z}, // East
+        {coord.x - 1, coord.z}  // West
+    };
+
+    bool prevNeighborState[4];
+    for (int i = 0; i < 4; i++) {
+        prevNeighborState[i] = neighborsAvailable[i];
+        neighborsAvailable[i] = (world->getChunk(neighborCoords[i]) != nullptr);
+    }
+
+    // Check if neighbor availability changed
+    bool neighborStateChanged = false;
+    for (int i = 0; i < 4; i++) {
+        if (prevNeighborState[i] != neighborsAvailable[i]) {
+            neighborStateChanged = true;
+            break;
+        }
+    }
+
+    // If neighbors changed and we now have all neighbors, mark for remesh
+    bool currentlyHasAllNeighbors = hasAllNeighbors();
+    if (neighborStateChanged && currentlyHasAllNeighbors && !hadAllNeighbors) {
+        markForRemesh();
+    }
+
+    hadAllNeighbors = currentlyHasAllNeighbors;
+}
+
+bool Chunk::hasAllNeighbors() const {
+    for (int i = 0; i < 4; i++) {
+        if (!neighborsAvailable[i]) {
+            return false;
+        }
+    }
+    return true;
+}
+
+void Chunk::markNeighborDirty() {
+    // Reset neighbor state to force recheck
+    for (int i = 0; i < 4; i++) {
+        neighborsAvailable[i] = false;
+    }
+    hadAllNeighbors = false;
+}
+
+void Chunk::updateFromNeighbors() {
+    // Get current time (simplified - in a real engine you'd get actual time)
+    static float timeCounter = 0.0f;
+    timeCounter += 0.016f; // Assume ~60 FPS
+
+    // Check neighbors every 0.5 seconds
+    if (timeCounter - lastNeighborCheck > 0.5f) {
+        checkNeighbors();
+        lastNeighborCheck = timeCounter;
+    }
+}
+
+void Chunk::resetStaticNoiseGenerators() {
+    // Set the global flag to force re-initialization on next generate() call
+    g_resetChunkNoise = true;
 }

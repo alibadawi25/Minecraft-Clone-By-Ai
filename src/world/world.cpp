@@ -287,10 +287,13 @@ void World::loadChunk(ChunkCoord coord) {    if (isChunkLoaded(coord)) {
     }    auto chunk = std::make_unique<Chunk>(coord, this);
 
     // Generate terrain using the improved chunk-based generation
-    chunk->generate();
+    chunk->generate();    // Add chunk to the world first
+    addChunk(coord, std::move(chunk));
 
-    // Add chunk to the world first
-    addChunk(coord, std::move(chunk));// Mark the chunk for remeshing instead of generating mesh immediately
+    // Notify neighbors that a new chunk is available
+    notifyNeighborsOfNewChunk(coord);
+
+    // Mark the chunk for remeshing instead of generating mesh immediately
     // This allows all neighboring chunks to be loaded first, ensuring cross-chunk face culling works
     Chunk* loadedChunk = getChunk(coord);
     if (loadedChunk) {
@@ -326,6 +329,23 @@ bool World::isChunkLoaded(ChunkCoord coord) const {
     return chunks.find(coord) != chunks.end();
 }
 
+void World::notifyNeighborsOfNewChunk(ChunkCoord newChunkCoord) {
+    // Notify all 4 neighboring chunks that a new neighbor is available
+    ChunkCoord neighborCoords[4] = {
+        {newChunkCoord.x, newChunkCoord.z + 1}, // North
+        {newChunkCoord.x, newChunkCoord.z - 1}, // South
+        {newChunkCoord.x + 1, newChunkCoord.z}, // East
+        {newChunkCoord.x - 1, newChunkCoord.z}  // West
+    };
+
+    for (int i = 0; i < 4; i++) {
+        Chunk* neighborChunk = getChunk(neighborCoords[i]);
+        if (neighborChunk) {
+            neighborChunk->markNeighborDirty();
+        }
+    }
+}
+
 std::vector<ChunkCoord> World::getChunksAroundPosition(const glm::vec3& position) const {
     std::vector<ChunkCoord> result;    ChunkCoord centerChunk = ChunkUtils::worldToChunkCoord(position);
 
@@ -352,19 +372,25 @@ void World::updateDirtyChunks() {
     int maxMeshesThisFrame = getMaxMeshesPerFrame();
 
     for (auto& pair : chunks) {
-        if (meshesGenerated >= maxMeshesThisFrame) {
-            break; // Limit mesh generation per frame
-        }
-
         Chunk* chunk = pair.second.get();
-        if (chunk && chunk->needsRemeshing()) {
-            if (chunk->getState() == ChunkState::GENERATED || chunk->getState() == ChunkState::READY) {
-                chunk->generateMesh();
-                meshesGenerated++;
+        if (chunk) {
+            // Check for neighbor changes periodically
+            chunk->updateFromNeighbors();
+
+            // Generate mesh if needed
+            if (meshesGenerated < maxMeshesThisFrame && chunk->needsRemeshing()) {
+                if (chunk->getState() == ChunkState::GENERATED || chunk->getState() == ChunkState::READY) {
+                    chunk->generateMesh();
+                    meshesGenerated++;
+                }
             }
         }
     }
 }
+
+// Note: Legacy generatePerlinTerrain method below is no longer used
+// Terrain generation now handled by efficient Chunk::generate() method
+// with static FastNoise generators and better performance
 
 void World::generatePerlinTerrain(Chunk* chunk) {
     if (!chunk) return;
@@ -456,15 +482,16 @@ void World::generatePerlinTerrain(Chunk* chunk) {
                 // Fill water in low areas
                 else if (y <= WATER_LEVEL && terrainHeight < WATER_LEVEL) {
                     blockType = BlockType::WATER;
-                }
-
-                if (blockType != BlockType::AIR) {
+                }                if (blockType != BlockType::AIR) {
                     chunk->setBlock(x, y, z, BlockData(blockType));
                 }
             }
         }
     }
 }
+
+// Terrain generation is now handled by Chunk::generate() method
+// This provides better performance with static noise generators and cleaner code organization
 
 void World::setRenderDistance(int distance) {
     renderDistance = std::max(2, std::min(32, distance));
@@ -669,8 +696,16 @@ void World::regenerateWorld(unsigned int newSeed) {
     // Clear all existing chunks
     chunks.clear();
 
-    // Update the noise generator with new seed
+    // Update the terrain settings with new seeds
+    gTerrainSettings.baseSeed = newSeed;
+    gTerrainSettings.mountainSeed = newSeed + 1337;  // Offset for different patterns
+
+    // Update the legacy noise generator (kept for compatibility)
     noiseGenerator = MathUtils::SimpleNoise(newSeed);
+
+    // Force re-initialization of static noise generators in Chunk::generate()
+    // This is done by calling a static reset function
+    resetChunkNoiseGenerators();
 
     // Clear targeted block
     clearTargetedBlock();
@@ -771,3 +806,10 @@ float World::getTerrainHeight(float worldX, float worldZ) const {
     return std::max(5.0f, std::min(finalHeight, static_cast<float>(CHUNK_HEIGHT - 10)));
 }
 #endif
+
+void World::resetChunkNoiseGenerators() {
+    // This function forces the static noise generators in Chunk::generate()
+    // to be re-initialized with new seeds on the next chunk generation
+    // We do this by calling a static function in the Chunk class
+    Chunk::resetStaticNoiseGenerators();
+}

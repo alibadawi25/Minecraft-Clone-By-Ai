@@ -71,8 +71,12 @@ enum class CubeFace {
 };
 
 class Chunk {
-public:    Chunk(ChunkCoord coord, World* world = nullptr);
+public:
+    Chunk(ChunkCoord coord, World* world = nullptr);
     ~Chunk();
+
+    // Static method to reset noise generators for new seeds
+    static void resetStaticNoiseGenerators();
 
     // Block access methods
     BlockData getBlock(int x, int y, int z) const;
@@ -102,10 +106,15 @@ public:    Chunk(ChunkCoord coord, World* world = nullptr);
     // Coordinate utilities
     ChunkCoord getCoord() const { return coord; }
     glm::vec3 getWorldPosition() const;
-    bool isInBounds(int x, int y, int z) const;
-
-    // Face culling optimization
+    bool isInBounds(int x, int y, int z) const;    // Face culling optimization
     bool shouldRenderFace(int x, int y, int z, CubeFace face) const;
+    bool shouldRenderWaterFace(int x, int y, int z, CubeFace face) const;
+
+    // Neighbor checking and updating
+    void checkNeighbors();
+    bool hasAllNeighbors() const;
+    void markNeighborDirty();
+    void updateFromNeighbors();
 
     // Statistics
     int getVertexCount() const { return vertexCount; }
@@ -123,6 +132,11 @@ private:
     size_t vertexCount;
     bool meshDirty;
     bool hasGeometry;
+
+    // Neighbor tracking for dynamic updates
+    bool neighborsAvailable[4]; // N, S, E, W neighbors
+    bool hadAllNeighbors;
+    float lastNeighborCheck;
 
     // Mesh generation helpers
     void addFace(std::vector<float>& vertices, const glm::vec3& pos,

@@ -36,6 +36,9 @@ public:
     // World regeneration with new seed
     void regenerateWorld(unsigned int newSeed);
 
+    // Reset static noise generators in chunks for new seed
+    static void resetChunkNoiseGenerators();
+
     // Generate a simple flat world
     void generateFlatChunk(ChunkCoord coord);    // Chunk management
     Chunk* getChunk(ChunkCoord coord);
@@ -52,6 +55,9 @@ public:
     void loadChunk(ChunkCoord coord);
     void unloadChunk(ChunkCoord coord);
     bool isChunkLoaded(ChunkCoord coord) const;
+
+    // Neighbor notification system
+    void notifyNeighborsOfNewChunk(ChunkCoord newChunkCoord);
 
     // Render distance management
     int getRenderDistance() const { return renderDistance; }
