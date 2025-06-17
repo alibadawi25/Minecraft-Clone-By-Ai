@@ -284,16 +284,13 @@ void World::updateChunksAroundPlayer(const glm::vec3& playerPos) {
 
 void World::loadChunk(ChunkCoord coord) {    if (isChunkLoaded(coord)) {
         return;  // Chunk already loaded
-    }
+    }    auto chunk = std::make_unique<Chunk>(coord, this);
 
-    auto chunk = std::make_unique<Chunk>(coord, this);
+    // Generate terrain using the improved chunk-based generation
+    chunk->generate();
 
-    // Generate terrain using Perlin noise
-    generatePerlinTerrain(chunk.get());
-
-    // Set state to generated so mesh generation can proceed
-    chunk->setState(ChunkState::GENERATED);    // Add chunk to the world first
-    addChunk(coord, std::move(chunk));    // Mark the chunk for remeshing instead of generating mesh immediately
+    // Add chunk to the world first
+    addChunk(coord, std::move(chunk));// Mark the chunk for remeshing instead of generating mesh immediately
     // This allows all neighboring chunks to be loaded first, ensuring cross-chunk face culling works
     Chunk* loadedChunk = getChunk(coord);
     if (loadedChunk) {
@@ -382,23 +379,34 @@ void World::generatePerlinTerrain(Chunk* chunk) {
 
             // Natural terrain generation (Minecraft-style)
             float worldXf = static_cast<float>(worldX);
-            float worldZf = static_cast<float>(worldZ);            // Multi-octave noise for natural terrain with better range
+            float worldZf = static_cast<float>(worldZ);            // Advanced FastNoise terrain generation with smoothing
+#ifdef FASTNOISE_AVAILABLE
+            // Apply gentle domain warping for natural terrain distortion
+            float warpedX = worldXf;
+            float warpedZ = worldZf;
+            domainWarpNoise.DomainWarp(warpedX, warpedZ);
+
+            // Get terrain height using the sophisticated FastNoise system
+            float terrainHeightFloat = getTerrainHeight(warpedX, warpedZ);
+
+            // Apply gentle smoothing by reducing extreme height variations
+            // This prevents sudden cliff faces while maintaining terrain variety
+            float smoothingFactor = 0.85f;
+            terrainHeightFloat = BASE_HEIGHT + (terrainHeightFloat - BASE_HEIGHT) * smoothingFactor;
+
+            int terrainHeight = static_cast<int>(terrainHeightFloat);
+#else
+            // Fallback to simple noise if FastNoise not available
             float heightNoise = noiseGenerator.fractalNoise2D(worldXf * 0.01f, worldZf * 0.01f, 4, 0.5f);
 
             // Apply non-linear transformation: make higher areas steeper, lower areas flatter
-            // Use power function to emphasize extremes
             float normalizedNoise = (heightNoise + 1.0f) * 0.5f; // Convert from [-1,1] to [0,1]
-
-            // Apply exponential curve: low values stay low, high values get amplified
             float steepnessFactor = 2.2f; // Higher = more contrast between high/low areas
             float transformedNoise = std::pow(normalizedNoise, steepnessFactor);
-
-            // Convert back to [-1,1] range and expand terrain range
             transformedNoise = transformedNoise * 2.0f - 1.0f;
             int terrainHeight = BASE_HEIGHT + static_cast<int>(transformedNoise * 55.0f);
-
-            // Allow full range: water areas (9-30) to high mountains (64-119)
             terrainHeight = std::max(9, std::min(terrainHeight, CHUNK_HEIGHT - 30));
+#endif
 
             // Generate blocks in column with natural layering
             for (int y = 0; y < CHUNK_HEIGHT; ++y) {
@@ -673,72 +681,93 @@ void World::regenerateWorld(unsigned int newSeed) {
 
 #ifdef FASTNOISE_AVAILABLE
 void World::setupMountainGeneration(unsigned int seed) {
-    // MINECRAFT-INSPIRED NOISE SETUP
+    // ADVANCED MINECRAFT-INSPIRED NOISE SETUP WITH MODERN FASTNOISE FEATURES
 
     // Continentalness noise - large scale landmasses (like Minecraft 1.18+)
     mountainNoise.SetSeed(seed);
     mountainNoise.SetNoiseType(FastNoiseLite::NoiseType_OpenSimplex2);
-    mountainNoise.SetFractalType(FastNoiseLite::FractalType_FBm);
-    mountainNoise.SetFractalOctaves(4);
-    mountainNoise.SetFractalLacunarity(2.0f);
-    mountainNoise.SetFractalGain(0.5f);
-    mountainNoise.SetFrequency(0.0008f);  // Very low frequency for large continents
-
-    // Height noise - medium scale hills and mountains
+    mountainNoise.SetFractalType(FastNoiseLite::FractalType_Ridged); // Ridged for more dramatic continents
+    mountainNoise.SetFractalOctaves(5);
+    mountainNoise.SetFractalLacunarity(2.1f);
+    mountainNoise.SetFractalGain(0.6f);
+    mountainNoise.SetFractalWeightedStrength(0.8f); // Enhanced contrast
+    mountainNoise.SetFrequency(0.0006f);  // Very low frequency for large continents    // Height noise - medium scale hills and mountains with smoother variation
     ridgeNoise.SetSeed(seed + 1000);
-    ridgeNoise.SetNoiseType(FastNoiseLite::NoiseType_OpenSimplex2);
-    ridgeNoise.SetFractalType(FastNoiseLite::FractalType_FBm);
+    ridgeNoise.SetNoiseType(FastNoiseLite::NoiseType_OpenSimplex2S); // Smoother variant
+    ridgeNoise.SetFractalType(FastNoiseLite::FractalType_FBm); // Back to FBm for smoother transitions
     ridgeNoise.SetFractalOctaves(6);
-    ridgeNoise.SetFractalLacunarity(2.0f);
-    ridgeNoise.SetFractalGain(0.5f);
-    ridgeNoise.SetFrequency(0.003f);  // Medium frequency for hills and mountains    // Detail noise for surface variation
+    ridgeNoise.SetFractalLacunarity(2.1f);
+    ridgeNoise.SetFractalGain(0.5f); // Reduced gain for smoother terrain
+    ridgeNoise.SetFractalWeightedStrength(0.7f); // Reduced contrast
+    ridgeNoise.SetFrequency(0.003f);  // Medium frequency for hills and mountains
+
+    // Detail noise for surface variation - back to smoother OpenSimplex
     detailNoise.SetSeed(seed + 2000);
-    detailNoise.SetNoiseType(FastNoiseLite::NoiseType_OpenSimplex2);
+    detailNoise.SetNoiseType(FastNoiseLite::NoiseType_OpenSimplex2); // Smoother than cellular
     detailNoise.SetFractalType(FastNoiseLite::FractalType_FBm);
     detailNoise.SetFractalOctaves(3);
     detailNoise.SetFractalLacunarity(2.0f);
-    detailNoise.SetFractalGain(0.5f);
+    detailNoise.SetFractalGain(0.4f);
     detailNoise.SetFrequency(0.01f);  // Higher frequency for surface details
 
-    // Domain warp - keep but reduce impact
+    // Gentler domain warp to prevent steep walls
     domainWarpNoise.SetSeed(seed + 3000);
     domainWarpNoise.SetDomainWarpType(FastNoiseLite::DomainWarpType_OpenSimplex2);
-    domainWarpNoise.SetDomainWarpAmp(20.0f);  // Reduced warp for more predictable terrain
-    domainWarpNoise.SetFrequency(0.002f);
+    domainWarpNoise.SetDomainWarpAmp(15.0f);  // Much reduced warp to prevent cliff faces
+    domainWarpNoise.SetFrequency(0.0015f);
     domainWarpNoise.SetFractalType(FastNoiseLite::FractalType_DomainWarpProgressive);
-    domainWarpNoise.SetFractalOctaves(2);
+    domainWarpNoise.SetFractalOctaves(3);
+    domainWarpNoise.SetFractalLacunarity(2.2f);
+    domainWarpNoise.SetFractalGain(0.7f);
 }
 
 float World::getTerrainHeight(float worldX, float worldZ) const {
-    // MINECRAFT-INSPIRED TERRAIN GENERATION
-    // Simple but effective multi-octave noise like Minecraft
+    // ADVANCED MINECRAFT-INSPIRED TERRAIN GENERATION WITH MODERN FASTNOISE
 
     // Continentalness - large scale land masses (like Minecraft's continent noise)
-    float continentNoise = mountainNoise.GetNoise(worldX * 0.0008f, worldZ * 0.0008f);
+    float continentNoise = mountainNoise.GetNoise(worldX, worldZ);
     continentNoise = (continentNoise + 1.0f) * 0.5f; // 0 to 1
 
-    // Height variation - medium scale hills and valleys
-    float heightNoise = ridgeNoise.GetNoise(worldX * 0.003f, worldZ * 0.003f);
-      // Detail - small scale surface variation
-    float surfaceDetail = detailNoise.GetNoise(worldX * 0.01f, worldZ * 0.01f);    // Combine like Minecraft with more reasonable heights:
-    // - Continent noise controls the base terrain type
-    // - Height noise adds hills and valleys
-    // - Detail noise adds surface variation    // Use continent noise to determine terrain type
-    float terrainType = continentNoise; // 0 to 1
+    // Height variation - medium scale hills and valleys with terracing
+    float heightNoise = ridgeNoise.GetNoise(worldX, worldZ);
 
-    float finalHeight;
-    if (terrainType < 0.3f) {
-        // Ocean/lowlands (20-35 blocks)
-        finalHeight = 20.0f + terrainType * 50.0f + heightNoise * 15.0f + surfaceDetail * 5.0f;
-    } else if (terrainType < 0.6f) {
-        // Plains/hills (35-55 blocks)
-        finalHeight = 35.0f + (terrainType - 0.3f) * 66.0f + heightNoise * 25.0f + surfaceDetail * 5.0f;
+    // Detail - organic surface variation using cellular noise
+    float surfaceDetail = detailNoise.GetNoise(worldX, worldZ);
+    surfaceDetail = (surfaceDetail + 1.0f) * 0.5f; // Normalize cellular noise
+
+    // Advanced terrain blending with erosion simulation
+    float terrainType = continentNoise;
+
+    // Apply terrain-dependent erosion effects
+    float erosion = 1.0f;
+    if (terrainType > 0.6f) {
+        // Mountains experience more erosion creating valleys and plateaus
+        erosion = 0.7f + 0.3f * surfaceDetail;
+    }    float finalHeight;
+    if (terrainType < 0.25f) {
+        // Deep ocean/lowlands (10-30 blocks) - flatter with subtle variation
+        finalHeight = 10.0f + terrainType * 80.0f + heightNoise * 6.0f + surfaceDetail * 2.0f;
+    } else if (terrainType < 0.45f) {
+        // Shallow waters/beaches (30-50 blocks) - gentle slopes
+        finalHeight = 30.0f + (terrainType - 0.25f) * 100.0f + heightNoise * 8.0f + surfaceDetail * 3.0f;
+    } else if (terrainType < 0.65f) {
+        // Plains/rolling hills (50-75 blocks) - moderate variation
+        finalHeight = 50.0f + (terrainType - 0.45f) * 125.0f + heightNoise * 12.0f * erosion + surfaceDetail * 4.0f;
+    } else if (terrainType < 0.85f) {
+        // Foothills/high hills (75-100 blocks) - more dramatic but controlled
+        finalHeight = 75.0f + (terrainType - 0.65f) * 125.0f + heightNoise * 18.0f * erosion + surfaceDetail * 5.0f;
     } else {
-        // Mountains (55-120 blocks)
-        finalHeight = 55.0f + (terrainType - 0.6f) * 87.5f + heightNoise * 35.0f + surfaceDetail * 5.0f;
+        // High mountains (100-120 blocks) - controlled extreme variation
+        float mountainFactor = (terrainType - 0.85f) * 6.67f; // 0 to 1
+        finalHeight = 100.0f + mountainFactor * 20.0f + heightNoise * 22.0f * erosion + surfaceDetail * 6.0f;
+
+        // Create controlled mountain peaks (reduced amplification)
+        if (heightNoise > 0.4f) {
+            finalHeight += (heightNoise - 0.4f) * 12.0f; // Reduced peak amplification
+        }
     }
 
-    // Clamp to valid range
-    return std::max(10.0f, std::min(finalHeight, static_cast<float>(CHUNK_HEIGHT - 20)));
+    // Clamp to valid range with more generous mountain heights
+    return std::max(5.0f, std::min(finalHeight, static_cast<float>(CHUNK_HEIGHT - 10)));
 }
 #endif

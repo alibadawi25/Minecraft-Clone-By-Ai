@@ -519,3 +519,130 @@ namespace ChunkUtils {
                z >= 0 && z < CHUNK_DEPTH;
     }
 }
+
+void Chunk::generate() {
+#ifdef FASTNOISE_AVAILABLE
+    static FastNoiseLite baseNoise;
+    static FastNoiseLite mountainNoise;
+    static bool initialized = false;
+
+    if (!initialized) {
+        // Base terrain: rolling hills
+        baseNoise.SetSeed(gTerrainSettings.baseSeed);
+        baseNoise.SetNoiseType(FastNoiseLite::NoiseType_OpenSimplex2);
+        baseNoise.SetFractalType(FastNoiseLite::FractalType_FBm);
+        baseNoise.SetFractalOctaves(5);
+        baseNoise.SetFractalLacunarity(2.0f);
+        baseNoise.SetFractalGain(0.5f);
+        baseNoise.SetRotationType3D(FastNoiseLite::RotationType3D_ImproveXZPlanes);
+
+        // Mountain ridges
+        mountainNoise.SetSeed(gTerrainSettings.mountainSeed);
+        mountainNoise.SetNoiseType(FastNoiseLite::NoiseType_OpenSimplex2);
+        mountainNoise.SetFractalType(FastNoiseLite::FractalType_Ridged);
+        mountainNoise.SetFractalOctaves(3);
+
+        initialized = true;
+    }
+
+    baseNoise.SetFrequency(gTerrainSettings.baseFrequency);
+    mountainNoise.SetFrequency(gTerrainSettings.mountainFrequency);
+
+    int worldX0 = coord.x * CHUNK_WIDTH;
+    int worldZ0 = coord.z * CHUNK_DEPTH;
+    int waterLevel = gTerrainSettings.waterLevel;
+
+    for (int x = 0; x < CHUNK_WIDTH; x++) {
+        for (int z = 0; z < CHUNK_DEPTH; z++) {
+            float worldX = float(worldX0 + x);
+            float worldZ = float(worldZ0 + z);
+
+            // Base terrain height
+            float baseHeight = baseNoise.GetNoise(worldX, worldZ);
+            baseHeight = baseHeight * 0.5f + 0.5f; // Normalize to [0,1]
+
+            // Mountain detail for higher elevations
+            float mountainDetail = 0.0f;
+            if (baseHeight > 0.6f) {
+                float rawMountainNoise = mountainNoise.GetNoise(worldX, worldZ);
+                float ridged = 1.0f - std::abs(rawMountainNoise);
+                ridged = std::pow(ridged, 3.0f);
+                mountainDetail = ridged * (baseHeight - 0.6f) * 2.5f;
+            }
+
+            // Combine heights
+            float combinedHeight = baseHeight + mountainDetail;
+            if (combinedHeight > 1.5f) combinedHeight = 1.5f;
+
+            int maxTerrainHeight = gTerrainSettings.maxTerrainHeight;
+            int height = int(combinedHeight * maxTerrainHeight);
+
+            // Generate terrain column
+            for (int y = 0; y < CHUNK_HEIGHT; y++) {
+                if (y > height && y <= waterLevel) {
+                    setBlock(x, y, z, BlockData(BlockType::WATER));
+                }
+                else if (y > height) {
+                    setBlock(x, y, z, BlockData(BlockType::AIR));
+                }
+                else {
+                    bool isMountain = (height >= 50);
+                    bool nearWater = (height >= waterLevel - 1) && (height <= waterLevel + 1);
+
+                    if (y == height) {
+                        // Surface layer
+                        if (isMountain)
+                            setBlock(x, y, z, BlockData(BlockType::STONE));
+                        else if (nearWater)
+                            setBlock(x, y, z, BlockData(BlockType::SAND));
+                        else if (height > waterLevel + 1)
+                            setBlock(x, y, z, BlockData(BlockType::GRASS));
+                        else
+                            setBlock(x, y, z, BlockData(BlockType::SAND));
+                    }
+                    else if (y >= height - 4) {
+                        // Subsurface layer (up to 4 blocks deep)
+                        if (isMountain)
+                            setBlock(x, y, z, BlockData(BlockType::STONE));
+                        else if (nearWater)
+                            setBlock(x, y, z, BlockData(BlockType::SAND));
+                        else if (height > waterLevel + 1)
+                            setBlock(x, y, z, BlockData(BlockType::DIRT));
+                        else
+                            setBlock(x, y, z, BlockData(BlockType::SAND));
+                    }
+                    else {
+                        // Deep underground - all stone
+                        setBlock(x, y, z, BlockData(BlockType::STONE));
+                    }
+                }
+            }
+        }
+    }
+
+    // Set state to generated
+    setState(ChunkState::GENERATED);
+#else
+    // Fallback to simple flat terrain if FastNoise not available
+    for (int x = 0; x < CHUNK_WIDTH; x++) {
+        for (int z = 0; z < CHUNK_DEPTH; z++) {
+            for (int y = 0; y < CHUNK_HEIGHT; y++) {
+                if (y == 0) {
+                    setBlock(x, y, z, BlockData(BlockType::BEDROCK));
+                } else if (y <= gTerrainSettings.waterLevel) {
+                    if (y == gTerrainSettings.waterLevel) {
+                        setBlock(x, y, z, BlockData(BlockType::GRASS));
+                    } else {
+                        setBlock(x, y, z, BlockData(BlockType::DIRT));
+                    }
+                } else if (y <= gTerrainSettings.waterLevel + 5) {
+                    setBlock(x, y, z, BlockData(BlockType::WATER));
+                } else {
+                    setBlock(x, y, z, BlockData(BlockType::AIR));
+                }
+            }
+        }
+    }
+    setState(ChunkState::GENERATED);
+#endif
+}

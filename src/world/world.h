@@ -11,6 +11,20 @@
 #include "FastNoiseLite.h"
 #endif
 
+// Terrain generation settings structure
+struct TerrainSettings {
+    float baseFrequency = 0.0015f;
+    float mountainFrequency = 0.0045f;
+    int maxTerrainHeight = 80;
+    int waterLevel = 20;
+    int horizontalRadius = 4;  // Chunk render distance
+    unsigned int baseSeed = 1337;
+    unsigned int mountainSeed = 2674;
+};
+
+// Global terrain settings instance
+inline TerrainSettings gTerrainSettings;
+
 class World {
 public:
     World();

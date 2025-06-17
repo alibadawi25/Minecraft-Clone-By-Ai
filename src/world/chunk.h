@@ -80,11 +80,14 @@ public:    Chunk(ChunkCoord coord, World* world = nullptr);
 
     // Safe block access with bounds checking
     BlockData getBlockSafe(int x, int y, int z) const;
-    void setBlockSafe(int x, int y, int z, BlockData block);
-
-    // Block access by world coordinates
+    void setBlockSafe(int x, int y, int z, BlockData block);    // Block access by world coordinates
     BlockData getBlockWorld(int worldX, int worldY, int worldZ) const;
-    void setBlockWorld(int worldX, int worldY, int worldZ, BlockData block);    // Mesh management
+    void setBlockWorld(int worldX, int worldY, int worldZ, BlockData block);
+
+    // Terrain generation
+    void generate();
+
+    // Mesh management
     void generateMesh();
     void render(const glm::mat4& view, const glm::mat4& projection, const glm::vec3& cameraPos);
     void clearMesh();
