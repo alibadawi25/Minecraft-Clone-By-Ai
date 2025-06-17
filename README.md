@@ -26,8 +26,11 @@ This showcases AI's ability to handle everything from low-level graphics program
 ### 🌍 **Complete Voxel World System**
 
 - **Infinite World Generation**: Seamless procedural terrain extending in all directions
-- **Chunk-Based Architecture**: Optimized 16×16×256 chunk system with efficient loading/unloading
-- **Multi-Biome Terrain**: FastNoise-powered procedural generation with varied landscapes
+- **Advanced Chunk-Based Architecture**: Optimized 16×16×256 chunk system with efficient loading/unloading
+- **Multi-Layered Terrain Generation**: FastNoise-powered procedural generation with base noise and mountain layers
+- **Realistic Biome Distribution**: Natural block layering with stone foundations, dirt subsurface, grass surface, sand beaches, and water bodies
+- **Seed-Based World Regeneration**: Generate completely new worlds with custom seeds for infinite variety
+- **Optimized Water Rendering**: Smart face culling for water blocks with proper transparency and neighbor awareness
 - **Block Diversity**: 10+ block types including grass, dirt, stone, water, sand, wood, leaves, and more
 
 ### 🎨 **Advanced Rendering Engine**
@@ -60,9 +63,13 @@ This showcases AI's ability to handle everything from low-level graphics program
 
 ## � Screenshots
 
-![Minecraft Clone with Gradient Sky](assets/textures/screenshot.png)
+![Advanced Terrain Generation with Gradient Sky](<assets/textures/Screenshot 2025-06-17 194244.png>)
+![Dynamic World Generation with Mountauns](<assets/textures/Screenshot 2025-06-17 194235.png>)
+_Advanced Terrain Generation with Gradient Sky - Showcase of the enhanced chunk-based terrain generation system featuring multi-layered FastNoise algorithms, realistic biome distribution, and beautiful gradient sky rendering._
 
-_Beautiful gradient sky system with atmospheric fog blending seamlessly into procedurally generated terrain. Features include dynamic chunk-based world generation, real-time block interaction, and optimized rendering performance._
+_Dynamic World Generation with Water Features - Demonstrating the improved terrain generation with proper water face culling, natural block layering (stone, dirt, grass, sand), and seamless chunk neighbor integration for optimal performance._
+
+_The latest terrain generation system features modernized chunk-based architecture with FastNoise integration, enabling diverse landscapes with rolling hills, mountainous regions, water bodies, and beaches. Each world can be regenerated with custom seeds for infinite variety._
 
 ## �📋 Prerequisites
 
@@ -302,8 +309,10 @@ ai-karim/
 **🎉 All core features implemented and fully functional!**
 
 - [x] **Complete Voxel World System** with infinite terrain generation
-- [x] **Chunk-Based Architecture** with optimized 16×16×256 chunks
-- [x] **Multi-Biome Procedural Terrain** using FastNoise
+- [x] **Advanced Chunk-Based Architecture** with optimized 16×16×256 chunks
+- [x] **Multi-Layered Procedural Terrain** using FastNoise with realistic biome distribution
+- [x] **Seed-Based World Regeneration** with customizable terrain parameters
+- [x] **Optimized Water Rendering** with smart face culling and transparency
 - [x] **Block Interaction System** with raycasting and visual feedback
 - [x] **Advanced Rendering Pipeline** with frustum culling and transparency
 - [x] **Performance Optimization** sustaining 60+ FPS
