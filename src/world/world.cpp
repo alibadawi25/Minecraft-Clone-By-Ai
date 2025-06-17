@@ -17,6 +17,11 @@ World::World() : initialized(false), blockShader(nullptr), highlightShader(nullp
                   highlightVAO(0), highlightVBO(0), targetedBlockValid(false),
                   noiseGenerator(1337), renderDistance(DEFAULT_RENDER_DISTANCE) {
     chunkUnloadDistance = renderDistance * CHUNK_UNLOAD_MULTIPLIER + 1.0f;
+
+#ifdef FASTNOISE_AVAILABLE
+    // Initialize mountain generation noise
+    setupMountainGeneration(1337);
+#endif
 }
 
 World::~World() {
@@ -375,35 +380,72 @@ void World::generatePerlinTerrain(Chunk* chunk) {
             int worldX = coord.x * CHUNK_WIDTH + x;
             int worldZ = coord.z * CHUNK_DEPTH + z;
 
-            // Get height from noise with multiple octaves for more interesting terrain
-            float continentalness = noiseGenerator.fractalNoise2D(worldX * 0.001f, worldZ * 0.001f, 4, 0.5f);
-            float heightNoise = noiseGenerator.fractalNoise2D(worldX * 0.01f, worldZ * 0.01f, 4, 0.5f);
-            float detailNoise = noiseGenerator.fractalNoise2D(worldX * 0.05f, worldZ * 0.05f, 2, 0.5f);            // Combine noise values to create varied terrain
-            float combinedNoise = continentalness * 0.7f + heightNoise * 0.2f + detailNoise * 0.1f;
+            // Natural terrain generation (Minecraft-style)
+            float worldXf = static_cast<float>(worldX);
+            float worldZf = static_cast<float>(worldZ);            // Multi-octave noise for natural terrain with better range
+            float heightNoise = noiseGenerator.fractalNoise2D(worldXf * 0.01f, worldZf * 0.01f, 4, 0.5f);
 
-            // Calculate terrain height
-            int terrainHeight = static_cast<int>(BASE_HEIGHT + combinedNoise * 40);
+            // Apply non-linear transformation: make higher areas steeper, lower areas flatter
+            // Use power function to emphasize extremes
+            float normalizedNoise = (heightNoise + 1.0f) * 0.5f; // Convert from [-1,1] to [0,1]
 
-            // Clamp height to valid range
-            terrainHeight = std::max(5, std::min(terrainHeight, CHUNK_HEIGHT - 10));
+            // Apply exponential curve: low values stay low, high values get amplified
+            float steepnessFactor = 2.2f; // Higher = more contrast between high/low areas
+            float transformedNoise = std::pow(normalizedNoise, steepnessFactor);
 
-            // Generate column of blocks
+            // Convert back to [-1,1] range and expand terrain range
+            transformedNoise = transformedNoise * 2.0f - 1.0f;
+            int terrainHeight = BASE_HEIGHT + static_cast<int>(transformedNoise * 55.0f);
+
+            // Allow full range: water areas (9-30) to high mountains (64-119)
+            terrainHeight = std::max(9, std::min(terrainHeight, CHUNK_HEIGHT - 30));
+
+            // Generate blocks in column with natural layering
             for (int y = 0; y < CHUNK_HEIGHT; ++y) {
-                BlockType blockType = BlockType::AIR;                if (y == 0) {
+                BlockType blockType = BlockType::AIR;
+
+                if (y == 0) {
+                    // Bedrock at bottom
                     blockType = BlockType::BEDROCK;
-                } else if (y < terrainHeight - STONE_DEPTH) {
-                    blockType = BlockType::STONE;
-                } else if (y < terrainHeight - 1) {
-                    blockType = BlockType::DIRT;
                 } else if (y <= terrainHeight) {
-                    // Surface layer - grass above water level, sand below
-                    if (terrainHeight > WATER_LEVEL) {
-                        blockType = BlockType::GRASS;
+                    // Natural layering based on depth from surface
+                    int depthFromSurface = terrainHeight - y;                    if (depthFromSurface == 0) {
+                        // Surface layer
+                        if (terrainHeight >= 70) {
+                            blockType = BlockType::STONE; // Stone surface on high mountains
+                        } else if (terrainHeight > WATER_LEVEL + 2) {
+                            blockType = BlockType::GRASS;                        } else if (terrainHeight >= WATER_LEVEL - 2) {
+                            blockType = BlockType::SAND; // Beach/shore                        } else {
+                            blockType = BlockType::SAND; // Underwater surface
+                        }
+                    } else if (depthFromSurface <= 3) {
+                        // Shallow subsurface - dirt layer
+                        if (terrainHeight >= 65) {
+                            blockType = BlockType::STONE; // Stone appears shallow on high mountains
+                        } else if (terrainHeight >= WATER_LEVEL - 2) {
+                            blockType = BlockType::DIRT;
+                        } else {
+                            blockType = BlockType::SAND; // Underwater becomes sand
+                        }
+                    } else if (terrainHeight >= 60 && depthFromSurface <= 6) {
+                        // Mountains - stone appears closer to surface
+                        blockType = BlockType::STONE;
+                    } else if (terrainHeight >= 50 && depthFromSurface <= 5) {
+                        // Hills - some stone near surface
+                        blockType = BlockType::STONE;
+                    } else if (depthFromSurface > 8) {
+                        // Deep underground - all stone
+                        blockType = BlockType::STONE;
                     } else {
-                        blockType = BlockType::SAND;
+                        // Default layer based on whether underwater or not
+                        if (terrainHeight < WATER_LEVEL) {
+                            blockType = BlockType::SAND; // Underwater areas use sand
+                        } else {
+                            blockType = BlockType::DIRT; // Above water areas use dirt
+                        }
                     }
                 }
-                // Water fills areas below water level where terrain is also below water level
+                // Fill water in low areas
                 else if (y <= WATER_LEVEL && terrainHeight < WATER_LEVEL) {
                     blockType = BlockType::WATER;
                 }
@@ -628,3 +670,75 @@ void World::regenerateWorld(unsigned int newSeed) {
     // The world is ready for new chunk generation with the new seed
     // Chunks will be generated as needed when the player moves around
 }
+
+#ifdef FASTNOISE_AVAILABLE
+void World::setupMountainGeneration(unsigned int seed) {
+    // MINECRAFT-INSPIRED NOISE SETUP
+
+    // Continentalness noise - large scale landmasses (like Minecraft 1.18+)
+    mountainNoise.SetSeed(seed);
+    mountainNoise.SetNoiseType(FastNoiseLite::NoiseType_OpenSimplex2);
+    mountainNoise.SetFractalType(FastNoiseLite::FractalType_FBm);
+    mountainNoise.SetFractalOctaves(4);
+    mountainNoise.SetFractalLacunarity(2.0f);
+    mountainNoise.SetFractalGain(0.5f);
+    mountainNoise.SetFrequency(0.0008f);  // Very low frequency for large continents
+
+    // Height noise - medium scale hills and mountains
+    ridgeNoise.SetSeed(seed + 1000);
+    ridgeNoise.SetNoiseType(FastNoiseLite::NoiseType_OpenSimplex2);
+    ridgeNoise.SetFractalType(FastNoiseLite::FractalType_FBm);
+    ridgeNoise.SetFractalOctaves(6);
+    ridgeNoise.SetFractalLacunarity(2.0f);
+    ridgeNoise.SetFractalGain(0.5f);
+    ridgeNoise.SetFrequency(0.003f);  // Medium frequency for hills and mountains    // Detail noise for surface variation
+    detailNoise.SetSeed(seed + 2000);
+    detailNoise.SetNoiseType(FastNoiseLite::NoiseType_OpenSimplex2);
+    detailNoise.SetFractalType(FastNoiseLite::FractalType_FBm);
+    detailNoise.SetFractalOctaves(3);
+    detailNoise.SetFractalLacunarity(2.0f);
+    detailNoise.SetFractalGain(0.5f);
+    detailNoise.SetFrequency(0.01f);  // Higher frequency for surface details
+
+    // Domain warp - keep but reduce impact
+    domainWarpNoise.SetSeed(seed + 3000);
+    domainWarpNoise.SetDomainWarpType(FastNoiseLite::DomainWarpType_OpenSimplex2);
+    domainWarpNoise.SetDomainWarpAmp(20.0f);  // Reduced warp for more predictable terrain
+    domainWarpNoise.SetFrequency(0.002f);
+    domainWarpNoise.SetFractalType(FastNoiseLite::FractalType_DomainWarpProgressive);
+    domainWarpNoise.SetFractalOctaves(2);
+}
+
+float World::getTerrainHeight(float worldX, float worldZ) const {
+    // MINECRAFT-INSPIRED TERRAIN GENERATION
+    // Simple but effective multi-octave noise like Minecraft
+
+    // Continentalness - large scale land masses (like Minecraft's continent noise)
+    float continentNoise = mountainNoise.GetNoise(worldX * 0.0008f, worldZ * 0.0008f);
+    continentNoise = (continentNoise + 1.0f) * 0.5f; // 0 to 1
+
+    // Height variation - medium scale hills and valleys
+    float heightNoise = ridgeNoise.GetNoise(worldX * 0.003f, worldZ * 0.003f);
+      // Detail - small scale surface variation
+    float surfaceDetail = detailNoise.GetNoise(worldX * 0.01f, worldZ * 0.01f);    // Combine like Minecraft with more reasonable heights:
+    // - Continent noise controls the base terrain type
+    // - Height noise adds hills and valleys
+    // - Detail noise adds surface variation    // Use continent noise to determine terrain type
+    float terrainType = continentNoise; // 0 to 1
+
+    float finalHeight;
+    if (terrainType < 0.3f) {
+        // Ocean/lowlands (20-35 blocks)
+        finalHeight = 20.0f + terrainType * 50.0f + heightNoise * 15.0f + surfaceDetail * 5.0f;
+    } else if (terrainType < 0.6f) {
+        // Plains/hills (35-55 blocks)
+        finalHeight = 35.0f + (terrainType - 0.3f) * 66.0f + heightNoise * 25.0f + surfaceDetail * 5.0f;
+    } else {
+        // Mountains (55-120 blocks)
+        finalHeight = 55.0f + (terrainType - 0.6f) * 87.5f + heightNoise * 35.0f + surfaceDetail * 5.0f;
+    }
+
+    // Clamp to valid range
+    return std::max(10.0f, std::min(finalHeight, static_cast<float>(CHUNK_HEIGHT - 20)));
+}
+#endif

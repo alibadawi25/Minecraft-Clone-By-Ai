@@ -7,6 +7,10 @@
 #include <memory>
 #include <glm/glm.hpp>
 
+#ifdef FASTNOISE_AVAILABLE
+#include "FastNoiseLite.h"
+#endif
+
 class World {
 public:
     World();
@@ -73,7 +77,7 @@ private:    std::unordered_map<ChunkCoord, std::unique_ptr<Chunk>, ChunkCoord::H
 
     // Terrain generation constants
     static constexpr int BASE_HEIGHT = 64;
-    static constexpr int WATER_LEVEL = 30;
+    static constexpr int WATER_LEVEL = 20;
     static constexpr int STONE_DEPTH = 5;
 
     // Rendering components
@@ -83,10 +87,16 @@ private:    std::unordered_map<ChunkCoord, std::unique_ptr<Chunk>, ChunkCoord::H
 
     // Block highlighting
     glm::ivec3 targetedBlockPos;
-    bool targetedBlockValid;
-
-    // World generation
+    bool targetedBlockValid;    // World generation
     MathUtils::SimpleNoise noiseGenerator;
+
+#ifdef FASTNOISE_AVAILABLE
+    // Advanced mountain generation with FastNoise
+    FastNoiseLite mountainNoise;       // Large scale mountains
+    FastNoiseLite ridgeNoise;          // Sharp mountain ridges
+    FastNoiseLite detailNoise;         // Fine surface details
+    FastNoiseLite domainWarpNoise;     // Domain warping for natural terrain
+#endif
 
     // Optimization systems
     mutable MathUtils::Frustum viewFrustum;
@@ -95,11 +105,15 @@ private:    std::unordered_map<ChunkCoord, std::unique_ptr<Chunk>, ChunkCoord::H
 
     // World settings
     int renderDistance;
-    float chunkUnloadDistance;
-
-    // Terrain generation methods
+    float chunkUnloadDistance;    // Terrain generation methods
     void generateSimpleTerrain(Chunk* chunk);
     void generatePerlinTerrain(Chunk* chunk);
-    std::vector<ChunkCoord> getChunksAroundPosition(const glm::vec3& position) const;    // Block highlighting helper
+    std::vector<ChunkCoord> getChunksAroundPosition(const glm::vec3& position) const;
+
+#ifdef FASTNOISE_AVAILABLE
+    // Mountain generation setup
+    void setupMountainGeneration(unsigned int seed);
+    float getTerrainHeight(float worldX, float worldZ) const;
+#endif// Block highlighting helper
     void initializeHighlightGeometry();
 };
